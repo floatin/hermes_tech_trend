@@ -161,7 +161,406 @@ TypeScript和Python正在形成新的AI反馈循环：
 
 ---
 
-## 四、程序员能力模型的新变化
+## 三点五、AI Coding Skills 体系深度调查
+
+> 本节系统性梳理当前与 AI Coding、Spec-Driven Development 相关的 Skills 生态，
+> 包括设计规范、编码智能体、测试驱动开发、代码审查等关键环节的工具链和方法论。
+
+### 3.5.1 设计规范类 Skills
+
+#### 3.5.1.1 DESIGN.md（Google 设计规范规范）
+
+**概述：** DESIGN.md 是 Google 开源的设计系统规范格式（Apache-2.0），旨在为 AI 编码智能体提供持久化、结构化的视觉规范理解。一份 DESIGN.md 文件同时包含机器可读的 YAML 设计令牌（Design Tokens）和人类可读的 Markdown 说明。
+
+**核心价值：**
+- 设计令牌（Tokens）提供精确值，确保 AI 生成的 UI 符合品牌规范
+- 说明文字（Prose）解释"为什么"，指导 AI 在未见场景中做出正确决策
+- 官方 CLI 工具（`@google/design.md`）提供格式校验、WCAG 对比度检查、版本 diff 和导出能力
+
+**文件结构：**
+```yaml
+---
+version: alpha        # 规范版本
+name: Heritage        # 设计系统名称
+colors:
+  primary: "#1A1C1E"
+  tertiary: "#B8422E"
+typography:
+  h1:
+    fontFamily: Public Sans
+    fontSize: 3rem
+    fontWeight: 700
+components:
+  button-primary:
+    backgroundColor: "{colors.tertiary}"
+    textColor: "#FFFFFF"
+---
+## Overview
+...（人类可读的规范说明）
+```
+
+**AI Coding 关联：** 当 AI 编码智能体需要生成 UI 代码时，DESIGN.md 提供了约束边界——颜色值必须引用令牌而非硬编码，组件属性遵循白名单，章节顺序强制规范（Overview → Colors → Typography → Components）。
+
+**引用来源：** `google-labs-code/design.md` — GitHub 22k+ stars 的开源项目
+
+---
+
+### 3.5.2 编码智能体类 Skills
+
+#### 3.5.2.1 Claude Code（Anthropic 官方 CLI 智能体）
+
+**概述：** Claude Code 是 Anthropic 官方发布的命令行编码智能体（v2.x），深度集成 Claude Sonnet/Opus/Haiku 模型，支持文件读写、Shell 命令执行、Git 工作流和 MCP 服务器扩展。
+
+**两种运行模式：**
+
+| 模式 | 触发方式 | 适用场景 |
+|------|---------|---------|
+| Print Mode（`-p`） | `claude -p 'task'` | 单次任务、CI/CD 自动化、结构化输出 |
+| Interactive PTY | `tmux` 配合 | 多轮迭代、人工在环、实时观察 |
+
+**AI Coding 工作流整合：**
+```bash
+# 单次任务：分析代码安全问题
+claude -p 'Review auth.py for security issues' \
+  --output-format json --max-turns 5
+
+# 多轮任务：通过 tmux 交互
+tmux new-session -d -s dev
+tmux send-keys -t dev 'cd /project && claude' Enter
+tmux send-keys -t dev 'Refactor the database layer' Enter
+tmux capture-pane -t dev -p -S -50
+```
+
+**关键机制：**
+- `--allowedTools` — 工具白名单（如只允许 Read/Edit，防止误操作）
+- `--max-turns` — 防止智能体在 Print Mode 下无限循环
+- MCP 服务器 — 扩展工具链（GitHub、PostgreSQL、Puppeteer 等）
+- CLAUDE.md — 项目级上下文文件，持久化项目规范和代码标准
+- Hooks — 自动化钩子（工具执行前/后、提交时触发）
+
+**AI Coding 关联：** Claude Code 是 Spec-Driven 开发的执行层——先通过 DESIGN.md 定义规范，再通过 Claude Code 按规范生成代码，人类在关键节点（Trust Dialog、Permissions Dialog）确认后继续。
+
+**引用来源：** `code.claude.com/docs` — Anthropic 官方文档
+
+---
+
+#### 3.5.2.2 OpenCode（开放编码智能体）
+
+**概述：** OpenCode 是一个提供商无关的开源 AI 编码智能体（TUI + CLI），支持 OpenRouter、Anthropic、OpenAI 等多种模型后端，适用于任务自动化、代码审查和长期运行的工作会话。
+
+**核心特点：**
+- 提供商无关 — 不绑定单一 LLM 提供商
+- 支持长期会话 — 通过 session ID 恢复历史会话
+- 内置 PR 审查 — `opencode pr 42` 直接审查 GitHub PR
+- 并行工作模式 — 支持多个工作目录/工作树并行执行
+
+**与 Claude Code 的区别：**
+
+| 维度 | Claude Code | OpenCode |
+|------|------------|---------|
+| 提供商绑定 | 仅 Anthropic | 开放（OpenRouter 等） |
+| MCP 集成 | 原生支持 | 通过 OpenRouter 扩展 |
+| PR 审查 | 需手动 diff | `opencode pr` 内置 |
+| 交互模式 | TUI + Print | TUI + CLI |
+
+**引用来源：** `opencode.ai` — 官方文档
+
+---
+
+### 3.5.3 Spec-Driven 与计划执行类 Skills
+
+#### 3.5.3.1 Writing Plans（规范编写 + 任务分解）
+
+**概述：** Writing Plans 是将需求规格转化为可执行任务清单的方法论 skill，确保每个任务符合"2-5 分钟粒度"原则，并包含完整的文件路径、代码示例和验证命令。
+
+**核心原则：**
+- **Bite-Sized Tasks** — 每个任务 2-5 分钟，避免"实现整个认证系统"这样的大任务
+- **TDD 驱动** — 每个代码任务必须包含 RED-GREEN-REFACTOR 完整循环
+- **Exact Details** — 精确的文件路径、可复制的命令、可验证的输出
+
+**Plan 文档结构：**
+```markdown
+# Feature Implementation Plan
+
+**Goal:** [一句话目标]
+**Architecture:** [2-3句方案]
+**Tech Stack:** [关键技术栈]
+
+## Task 1: Create User model with email field
+
+**Files:**
+- Create: `src/models/user.py`
+- Test: `tests/models/test_user.py`
+
+**Step 1: Write failing test**
+```python
+def test_user_email_required():
+    ...
+```
+
+**Step 2: Run test to verify failure**
+`pytest tests/models/test_user.py::test_user_email_required -v`
+Expected: FAIL — "User model not found"
+
+...
+```
+
+**与 Spec-Driven 的关系：** Writing Plans 将 DESIGN.md 中的高层规范（"做什么"）分解为可操作的步骤（"怎么做"），是 Spec-Driven Development 的具体执行入口。
+
+---
+
+#### 3.5.3.2 Subagent-Driven Development（子任务并行执行框架）
+
+**概述：** Subagent-Driven Development 是通过 fresh 子智能体逐任务执行实现计划的框架，每个任务经过"实现 → Spec 合规审查 → 代码质量审查"两阶段验证。
+
+**工作流：**
+```
+[读取 Plan] → [创建 Todo List]
+       ↓
+Task 1: [Dispatch 实现子智能体]
+       ↓ [完成]
+       [Spec 合规审查] ← FAIL → [修复后重审]
+       ↓ PASS
+       [代码质量审查] ← FAIL → [修复后重审]
+       ↓ PASS
+       [标记完成]
+       ↓
+Task 2: [同上进行...]
+       ↓
+[全部完成后：集成审查]
+```
+
+**关键原则：**
+- **Fresh Subagent per Task** — 每个任务用新的子智能体，避免上下文污染
+- **Spec Review First** — 先验证是否符合规格，再验证代码质量
+- **Never Skip Reviews** — 审查失败必须修复，不能跳过
+
+**与 Writing Plans 的关系：** Writing Plans 创建计划，Subagent-Driven Development 执行计划。两者形成"规划-执行"的闭环。
+
+**引用来源：** `obra/superpowers` 框架 — GitHub 开源方法论
+
+---
+
+### 3.5.4 测试与质量保障类 Skills
+
+#### 3.5.4.1 Test-Driven Development（测试驱动开发）
+
+**概述：** TDD 是 AI Coding 的质量基石——要求在任何生产代码之前先写失败的测试，通过 RED-GREEN-REFACTOR 循环确保测试覆盖和代码质量。
+
+**铁律：**
+```
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
+```
+
+**RED-GREEN-REFACTOR 循环：**
+
+| 阶段 | 动作 | 验证 |
+|------|------|------|
+| RED | 写一个最小化测试 | 运行测试，确认失败（feature missing） |
+| GREEN | 写最小化代码通过测试 | 运行测试，确认通过（不添加额外功能） |
+| REFACTOR | 清理代码（去重、命名） | 全量测试通过，无回归 |
+
+**反模式警示：**
+
+| 错误做法 | 正确做法 |
+|---------|---------|
+| "代码简单不需要测试" | 简单代码也会 break，30 秒测试避免数小时调试 |
+| "写完再补测试" | 测试通过立即通过 ≠ 测试有效，未验证边界 |
+| "手动测试过了" | 手动测试无记录、无法重跑、无法回归 |
+| "保留探索代码再改" | 探索代码必须删除，用 TDD 重写 |
+
+**AI Coding 关联：** 在 AI 辅助编程中，TDD 是防止 AI"幻觉代码"的关键——测试先写，AI 生成的代码必须通过测试才能接受。
+
+---
+
+#### 3.5.4.2 Requesting Code Review（提交前验证流水线）
+
+**概述：** Requesting Code Review 是代码提交前的自动化验证流水线，包含静态安全扫描、基线测试对比、独立审查智能体和自动修复循环。
+
+**六步流水线：**
+
+```
+Step 1: 获取 Diff
+Step 2: 静态安全扫描（硬编码密钥、SQL 注入、Shell 注入等）
+Step 3: 基线测试 + Lint（对比变更前后的失败数）
+Step 4: 自检清单（Secrets、验证、错误处理等）
+Step 5: 独立审查子智能体（FAIL-CLOSED 原则）
+Step 6: 评估结果 → 通过或自动修复循环（最多2次）
+```
+
+**FAIL-CLOSED 原则：** 审查智能体无法解析 diff → 视为失败；安全concerns 非空 → 必须 false；logic_errors 非空 → 必须 false。
+
+**与 TDD 的关系：** TDD 确保"写代码前有测试"，Requesting Code Review 确保"提交前有独立验证"。两者共同构成 AI Coding 的质量门禁。
+
+**引用来源：** `obra/superpowers` + `MorAlekss` — 开源方法论
+
+---
+
+#### 3.5.4.3 Systematic Debugging（系统性调试）
+
+**概述：** Systematic Debugging 是遇到 Bug 时严格遵循"根因调查 → 模式分析 → 假设验证 → 修复实现"四阶段的调试方法论，防止"快速修复-引入新 Bug"的恶性循环。
+
+**四阶段：**
+
+| 阶段 | 核心活动 | 完成标准 |
+|------|---------|---------|
+| Phase 1: 根因调查 | 读错误信息、可复现、查变更、追踪数据流 | 理解 WHAT 和 WHY |
+| Phase 2: 模式分析 | 找类似工作的代码、对比差异、理解依赖 | 知道什么不同 |
+| Phase 3: 假设验证 | 形成单一假设、最小化测试、一个变量 | 确认或新假设 |
+| Phase 4: 实现 | 建回归测试、修复根因、验证 | Bug 修复，测试全过 |
+
+**关键规则：**
+- 3 次以内修复失败 → 停止并质疑架构，而非继续打补丁
+- 无视错误信息 → 最常见的根因遗漏
+- 多步修复同时进行 → 无法隔离有效性
+
+**AI Coding 关联：** AI 生成的代码同样需要系统性调试。AI 可能引入"看起来对但实际错"的代码——Systematic Debugging 确保修复的是根因而非症状。
+
+---
+
+### 3.5.5 AI 系统构建类 Skills
+
+#### 3.5.5.1 DSPy（声明式 LM 编程框架）
+
+**概述：** DSPy 是 Stanford NLP 开源的声明式语言模型编程框架（22k+ GitHub stars），通过 Signatures（输入输出签名）、Modules（可组合模块）和 Optimizers（自动优化器）替代手动的提示工程。
+
+**核心概念：**
+
+**Signatures（签名）：**
+```python
+# Inline（快速原型）
+qa = dspy.Predict("question -> answer")
+
+# Class（复杂任务）
+class Summarize(dspy.Signature):
+    """Summarize text into key points."""
+    text = dspy.InputField()
+    summary = dspy.OutputField(desc="bullet points, 3-5 items")
+```
+
+**Modules（模块）：**
+| 模块 | 用途 | 特点 |
+|------|------|------|
+| `Predict` | 基础预测 | 最简单 |
+| `ChainOfThought` | 推理链 | 自动生成推理步骤 |
+| `ReAct` | 工具使用 | Agent-like，可调用外部工具 |
+| `ProgramOfThought` | 代码生成推理 | 生成并执行代码 |
+
+**Optimizers（优化器）：**
+| 优化器 | 方法 | 适用场景 |
+|--------|------|---------|
+| `BootstrapFewShot` | 从示例学习 | 有少量标注数据 |
+| `MIPRO` | 迭代提示优化 | 大规模搜索最优提示 |
+| `BootstrapFinetune` | 导出微调数据 | 准备模型微调 |
+
+**AI Coding 关联：** DSPy 代表的"声明式编程"与 Spec-Driven Development 高度一致——声明输入输出（Signatures），AI 自动生成实现（Modules），数据驱动优化（Optimizers）。
+
+**引用来源：** `dspy.ai` — Stanford NLP 开源项目，22k+ stars
+
+---
+
+### 3.5.6 Skills 体系全景图
+
+```
+AI Coding Skills 生态全景
+│
+├── 设计规范层
+│   └── DESIGN.md（Google）— 为 AI 提供结构化的设计系统规范
+│
+├── 规划层
+│   ├── Writing Plans — 将需求分解为可执行任务
+│   └── Subagent-Driven Development — 任务编排与并行执行
+│
+├── 执行层
+│   ├── Claude Code — Anthropic 官方编码智能体
+│   ├── OpenCode — 提供商无关的开放编码智能体
+│   └── (implicit) 其他 Agent（Codex 等）
+│
+├── 质量层
+│   ├── Test-Driven Development — 测试先行确保代码质量
+│   ├── Requesting Code Review — 提交前独立验证
+│   └── Systematic Debugging — 根因导向的调试方法
+│
+└── AI 系统构建层
+    └── DSPy — 声明式 LM 编程，自动优化提示和模块组合
+```
+
+### 3.5.7 推荐实践路径
+
+**路径一：最小可用 AI Coding 工作流**
+```
+DESIGN.md（规范定义）
+    → Writing Plans（任务分解）
+    → TDD（测试先行）
+    → Claude Code -p（单次执行）
+    → Requesting Code Review（提交验证）
+```
+
+**路径二：高级 AI Coding 工作流（多智能体协作）**
+```
+DESIGN.md（规范定义）
+    → Writing Plans（任务分解）
+    → Subagent-Driven Development
+    │   ├── Task 1: 实现子智能体 → Spec 审查 → 质量审查
+    │   ├── Task 2: （并行）实现子智能体 → Spec 审查 → 质量审查
+    │   └── ...
+    → 集成审查
+    → Systematic Debugging（如遇 Bug）
+```
+
+**路径三：AI 系统级编程**
+```
+DESIGN.md（规范定义）
+    → Writing Plans（任务分解）
+    → DSPy（构建 AI Pipeline）
+    │   ├── MultiHopRAG（多跳检索）
+    │   ├── ChainOfThought（推理链）
+    │   └── Optimizers（自动优化）
+    → Claude Code（代码生成）
+    → TDD + Requesting Code Review（质量保障）
+```
+
+### 3.5.8 Skills 与开发范式的对应关系
+
+| 开发范式 | 核心 Skills 组合 | 解决的问题 |
+|---------|----------------|-----------|
+| **Spec-Driven Development** | DESIGN.md + Writing Plans | AI 生成代码符合预期、规格清晰可追溯 |
+| **Agentic Coding** | Claude Code/OpenCode + Subagent-Driven | 复杂任务的多智能体协作执行 |
+| **Test-First AI Coding** | TDD + Claude Code | AI 代码有测试保护，防止幻觉 |
+| **Verified AI Coding** | Requesting Code Review + Systematic Debugging | 提交前独立验证，发现问题而非掩盖 |
+| **Declarative AI Systems** | DSPy + Writing Plans | 声明式构建复杂 AI Pipeline |
+
+---
+
+### 3.5.9 术语补充
+
+| 术语 | 解释 |
+|------|------|
+| RED-GREEN-REFACTOR | TDD 的三阶段循环：写失败测试 → 写通过代码 → 重构清理 |
+| FAIL-CLOSED | 审查原则：无法解析时视为失败，不放过任何可疑问题 |
+| Bite-Sized Task | 2-5 分钟粒度的任务分解，避免大而无当的任务 |
+| Signature（DSPy） | 输入输出字段的声明定义，替代手写 Prompt |
+| Optimizer（DSPy） | 数据驱动的提示/模块自动优化器 |
+| MCP（Model Context Protocol） | AI 工具之间的上下文共享协议 |
+| CLAUDE.md | Claude Code 的项目级上下文文件，持久化项目规范 |
+
+---
+
+### 3.5.10 参考文献
+
+| 技能 | 来源 | 链接 |
+|------|------|------|
+| DESIGN.md | Google Labs | `github.com/google-labs-code/design.md` |
+| Claude Code | Anthropic | `code.claude.com/docs` |
+| OpenCode | OpenCode AI | `opencode.ai` |
+| Writing Plans | obra/superpowers | 开源方法论 |
+| Subagent-Driven Development | obra/superpowers | 开源方法论 |
+| Test-Driven Development | obra/superpowers | 开源方法论 |
+| Requesting Code Review | obra/superpowers + MorAlekss | 开源方法论 |
+| Systematic Debugging | obra/superpowers | 开源方法论 |
+| DSPy | Stanford NLP | `dspy.ai` + `github.com/stanfordnlp/dspy` (22k+ stars) |
+
+---
 
 ### 4.1 AI时代核心能力金字塔
 
