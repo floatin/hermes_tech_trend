@@ -52,6 +52,67 @@
 - **定位**：官方 TypeScript SDK，可用于构建 MCP 服务器和客户端
 - **近期更新**：2026年3月有重大更新
 
+#### 7. `Gizele1/harness-init` ⭐ 31+（2026年新星）
+- **链接**：https://github.com/Gizele1/harness-init
+- **Star**：31+（2026年5月），Fork 6
+- ** commits**：38 commits，活跃维护中
+- **定位**：将仓库初始化为 agent-ready 环境的脚手架工具，深度践行 OpenAI Harness Engineering 方法论
+- **核心价值**：不是又一个 MCP Server，而是一套**系统化解决 Skills 膨胀 + 上下文混乱 + 熵增**的工程框架
+- **8 阶段闭环**：
+
+| Phase | 内容 | 解决的问题 |
+|-------|------|------------|
+| 0. Discovery | 探测技术栈、映射架构、识别分层 | AI 不知道项目用了什么 |
+| 1. AGENTS.md | ~100行定位地图（索引而非百科） | 上下文入口混乱 |
+| 2. docs/ | `architecture/LAYERS.md` + `golden-principles/` + `SECURITY.md` + `guides/` | 知识散落各角落 |
+| 3. Testing | 架构边界测试（ratchet 机制） | 架构随时间腐化 |
+| 4. Linting | 导入限制规则（错误信息中包含修复方案） | 规范无法强制执行 |
+| 5. CI | lint + typecheck + test + build 并行流水线 | 质量门禁缺失 |
+| 6. GC | 垃圾回收脚本 + 每周定时扫描 | 熵增无法对抗 |
+| 7. Hooks | Pre-commit 强制执行 | 人为跳过规范 |
+
+- **核心理念**（来自 OpenAI Harness Engineering）：
+  1. 工程师成为**环境设计者**——定义约束，而非实现
+  2. 给 AI 一张**地图**，而不是百科全书——AGENTS.md ~100行
+  3. **知识必须机器可读**——所有知识要在 repo 内，否则 AI 看不到
+  4. 架构用**机械方式强制执行**——linter + 测试，而非文档
+  5. **熵增管理 = 垃圾回收**——定期扫描防止腐化
+  6. **最小阻塞门控**——吞吐优先，合并哲学改变
+- **多 Agent 支持**：Claude Code、OpenAI Codex、Cursor、Cursor Rules
+- **安装方式**（CLI 一键）：
+  ```bash
+  claude plugin marketplace add https://github.com/Gizele1/harness-init.git
+  claude plugin install harness-init@harness-init
+  ```
+- **对 Topic B 的意义**：Skills 膨胀的终极解法不是限制 Skills 数量，而是通过 **AGENTS.md + docs/ + 分层文档** 让 AI 自己学会在正确的上下文里找正确的知识——harness-init 把这个过程自动化了
+
+#### 8. `humanlayer/12-factor-agents` ⭐ 273 commits（LangChain 博客背书）
+- **链接**：https://github.com/humanlayer/12-factor-agents
+- **Star**：未公开高星，但作者在 LangChain 博客发布，引发广泛讨论
+- ** commits**：273 commits，活跃
+- **定位**：类比《12-Factor Apps》，提炼**构建可靠 LLM 应用的原则**
+- **核心洞察**：作者深度使用过所有主流框架（LangChain、LangGraph、CrewAI、smolagents），并与大量 YC 创始人交流后发现——**真正决定 Agent 生产级可靠性的不是框架选择，而是工程实践**
+- **12 因素**（类似 12-Factor Apps）：
+  1. 单一职责的 Agent
+  2. 明确的工具边界
+  3. 可观测性（Agent 决策链路）
+  4. 环境隔离
+  5. 有状态的 Agent（持久化记忆）
+  6. ...
+- **对 Topic A 的意义**：在做 CLI + Skills 架构时，这 12 因素是检查清单——你的接入方案是否满足"生产级可靠性"？
+
+#### 9. `coleam00/context-engineering-intro` ⭐ 低星（Context Engineering 模板）
+- **链接**：https://github.com/coleam00/context-engineering-intro
+- ** commits**：25 commits，但派生自 1140 commits 的 `davidkimai/Context-Engineering`
+- **定位**：Context Engineering 的**实践入门模板**，不是理论文章
+- **核心内容**：
+  - `.claude/` — Claude Code 的项目级配置
+  - `PRPs/` — Prompt-Refinement-Protocols（迭代优化 Prompt 的协议）
+  - `validation/` — 让 AI **自己验证自己输出**的机制（Validation loops）
+  - `examples/` — 实际可运行的示例
+- **关键洞察**：这本书生成了一个让 AI **遵循 TDD 流程**的框架——不是告诉 AI"你要 TDD"，而是构建一个让 AI 自己跑 TDD 流程的环境
+- **对 Topic B 的意义**："蒸馏 Skill" 的实战参考——如何把工程方法论封装成可执行的 Skill 模板
+
 ---
 
 ### FastMCP 框架（快速构建 MCP Server）
@@ -178,6 +239,8 @@ L3 资源层（文件引用）：
 
 ### Skills 膨胀管理的核心策略
 
+> **harness-init 的启发**：Skills 膨胀的终极解法不是"少用 Skills"，而是**通过分层文档 + 机械执行让 AI 自己知道在什么场景下用什么知识**。Skills 是执行单元，上下文组织才是根因。
+
 | 策略 | 做法 | 适用阶段 |
 |------|------|----------|
 | **元数据精简** | description ≤ 50字，避免重复触发词 | 10+ Skills |
@@ -186,6 +249,7 @@ L3 资源层（文件引用）：
 | **生命周期管理** | 设立"活跃/存档/废弃"三态，定期清理 | 长期项目 |
 | **Base Skill 继承** | 通用技能抽出为基础包，子 Skill 继承扩展 | 多个相似 Skill |
 | **定期触发词审计** | 用 AI 检测 Skills 描述重叠，合并或区分 | 任何阶段 |
+| **harness-init 8阶段** | Discovery → AGENTS.md → docs/ → Testing → Linting → CI → GC → Hooks | 全栈熵增管理 |
 
 ---
 
@@ -311,6 +375,82 @@ L3 资源层（文件引用）：
     └─ 混合检索（可选进阶）
         └─ BM25 + 向量 + 重排序
 ```
+
+### 深度洞察：三个被表面化处理的根本问题
+
+> 以下内容超越"有哪些好项目"，直指三个方向**真正难解决的问题**。星数低不代表不重要，反而往往是因为太底层、还没有被产品化。
+
+---
+
+#### 洞察一：Prompt Engineering → Context Engineering → Harness Engineering 是同一问题的三层递进
+
+| 时代 | 核心问题 | 答案 |
+|------|---------|------|
+| **2023 Prompt Engineering** | 怎么写好一条指令？ | Few-shot、CoT、ReAct |
+| **2025 Context Engineering** | 上下文窗口里放什么？ | RAG、分块、层次检索 |
+| **2026 Harness Engineering** | 如何让 Agent 在真实环境中可靠运行？ | 约束+反馈+控制系统 |
+
+**关键洞察**：这三个词描述的是**同一个问题的不同深度**，不是替代关系。Harness Engineering 的本质是：
+
+- Prompt Engineering = 告诉模型"做什么"
+- Context Engineering = 给模型提供"它需要知道什么"
+- Harness Engineering = 确保模型"在约束内可靠地做到"
+
+OpenAI 的百万行实验验证了这个逻辑：3人团队、5个月、零手写代码。核心不是模型能力，而是围绕 Codex 构建的一整套 Harness——CI 流水线、执行计划持久化、决策日志、架构边界测试。
+
+**对 Topic A 的意义**：CLI + Skills 的价值不在于"接入 MSP"，而在于构建 Agent 的**运行环境**。harness-init 的 8 阶段闭环本质上是把 Harness Engineering 自动化。
+
+---
+
+#### 洞察二：Skills 膨胀的根因不是"太多"，而是"上下文层级缺失"
+
+所有 Skills 管理指南都在教你怎么**精简 Skills**——减少触发词、定期审计、版本锚定。但这治标不治本。
+
+真正的问题是：Skills 作为**执行单元**是好的，但它缺少一个**上下文组织层**。
+
+`davidkimai/Context-Engineering`（1140 commits，这个维护量说明它触及了深层问题）给出了一个分析框架，将上下文工程类比为生物组织层次：
+
+| 层次 | 类比 | 上下文中的作用 |
+|------|------|---------------|
+| **Atoms** | 原子 | 单一 Prompt / 单一工具调用 |
+| **Molecules** | 分子 | Few-shot Prompt（带示例） |
+| **Cells** | 细胞 | 记忆系统 + 多 Agent 协作 |
+| **Organs** | 器官 | 复杂 Agent 系统（规划+执行+反思） |
+| **Neural Systems** | 神经网络 | 跨会话持久记忆 + 认知工具 |
+
+**关键洞察**：Skills 膨胀之所以失控，是因为我们用"扁平列表"管理 Skills，但没有建立**层级索引**。harness-init 的 AGENTS.md（~100行定位地图）本质上是给 Skills 建索引：AI 执行任务前，先查 AGENTS.md 找到正确的 docs/ 路径，而不是遍历所有 Skills 描述。
+
+**Skills 膨胀的解法不是少用 Skills，而是让 Skills 活在正确的上下文层次里。**
+
+---
+
+#### 洞察三：代码仓库检索的核心矛盾不是"向量不够准"，而是"语义和结构是两种不同的知识"
+
+目前大多数 Code RAG 方案的核心假设是：**代码可以被语义向量化**。这个假设在简单场景下成立，但一旦涉及跨文件依赖、架构层级的理解，向量检索就暴露了根本缺陷：
+
+- 问："哪些服务依赖用户数据库？" → 这是**结构查询**，不是语义查询
+- 问："用户认证是怎么实现的？" → 这是**语义查询**
+
+`Google Code Wiki`（Google 发布）揭示了一个被大多数中文技术社区忽略的核心架构：
+
+```
+第一层：结构解析（Tree-sitter AST）
+  → 精准捕获函数签名、import 关系、调用图
+  → 解决向量检索无法回答的"哪些文件调用了这个函数"
+
+第二层：知识图谱（图数据库）
+  → 节点：函数、模块、服务；边：调用/继承/依赖关系
+  → 解决"哪些服务依赖 X"类型的结构查询
+
+第三层：代理式混合检索
+  → 语义问题 → 向量检索
+  → 依赖问题 → 图遍历
+  → 动态选择，不是把所有东西都塞给向量模型
+```
+
+**关键洞察**：`microsoft/GraphRAG`（19k stars）被热捧，但很多人没有理解它真正的价值：**不是"知识图谱"这个噱头，而是它实现了语义检索 + 结构检索的混合**。对于 20 万行以上的代码仓库，混合检索是必须的，而不是可选项。Tree-sitter 负责把代码解析成机器可理解的结构，知识图谱负责在这个结构上做推理。
+
+---
 
 ### 趋势总结
 
