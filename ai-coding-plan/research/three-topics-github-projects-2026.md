@@ -520,7 +520,173 @@ EOF
 - **缺点**：官方实现较重，2000行左右代码，学习成本较高
 - **近期更新**：2026年3-4月活跃更新
 
-#### 2. `gusye1234/nano-graphrag` ⭐ 轻量实现
+#### 2. `zilliztech/claude-context` ⭐ 6.6k（向量检索 + Milvus）
+
+- **链接**：https://github.com/zilliztech/claude-context
+- **Star**：6.6k（增长迅速）
+- **出品方**：Zilliz（Milvus 向量数据库母公司）
+- ** commits**：187 commits，v0.1.11（2026年4月28日）
+- **定位**：Code Search MCP for Claude Code，让整个代码库成为任何编码 Agent 的上下文
+- **核心能力**：
+
+```
+两个核心能力：
+1. 向量索引：把你的代码库做成向量索引，存到 Milvus / Zilliz Cloud
+2. 语义搜索：提供 search_code 的 MCP 工具，Agent 查代码时走语义搜索
+```
+
+- **解决的问题**：
+
+```
+没有 claude-context 时：
+  Claude Code 找代码像"翻书"——一页一页翻，看到标题差不多的就停下来读
+
+有了 claude-context 后：
+  问"用户认证逻辑在哪里" → 语义搜索 → 直接定位相关代码段
+```
+
+- **架构原理**：
+
+```python
+# 索引流程
+Codebase → Chunking (code-aware) → Embedding (code model)
+         → Milvus / Zilliz Cloud → Vector Index
+
+# 检索流程
+Query (自然语言) → Embedding → Vector Search → Top-K Code Chunks
+               → 注入 AI 上下文
+```
+
+- **安装配置（5分钟搞定）**：
+
+```bash
+# 1. 安装
+npm install -g claude-context
+
+# 2. 添加到 Claude Code
+claude mcp add claude-context \
+  -e OPENAI_API_KEY=sk-your-key
+
+# 3. 可选：使用 Zilliz Cloud（免费额度）
+claude mcp add claude-context \
+  -e OPENAI_API_KEY=sk-your-key \
+  -e MILVUS_ADDRESS=https://xxx.zillizcloud.com \
+  -e MILVUS_TOKEN=your-token
+```
+
+- **适用场景**：
+  - 大型代码库（10万行以上）
+  - 需要语义搜索而非精确文件名匹配
+  - 预算有限，需要节省 Token（省 80% Token）
+  - 已使用 Milvus 或 Zilliz Cloud 的企业
+
+#### 3. `abhigyanpatwari/GitNexus` ⭐ 10.8k（知识图谱 + Tree-sitter）
+
+- **链接**：https://github.com/abhigyanpatwari/GitNexus
+- **Star**：10.8k（2026年4月数据）
+- ** commits**：活跃维护（2026年5月1日仍有提交）
+- **许可证**：PolyForm Noncommercial License 1.0.0
+- **定位**：The Zero-Server Code Intelligence Engine，为 AI Agent 构建代码理解的"神经系统"
+- **核心使命**：
+
+```
+"Indexes any codebase into a knowledge graph — every dependency,
+call chain, cluster, and execution flow — then exposes it through
+smart tools so AI agents never miss code."
+```
+
+- **核心创新：预计算的关系智能**
+
+```
+传统 Graph RAG 问题：
+  询问"UserService 依赖什么？" → LLM 需要 4+ 次查询才能回答
+  → 中间过程可能遗漏关键上下文
+
+GitNexus 解决方案：
+  询问"UserService 依赖什么？" → impact 工具一次返回：
+  → 8 个调用者
+  → 3 个集群
+  → 90%+ 置信度
+  → 无需多次查询！
+```
+
+- **双模式架构**：
+
+| 维度 | CLI + MCP | Web UI |
+|------|-----------|--------|
+| 定位 | 日常开发，AI Agent 集成 | 快速探索、演示、一次性分析 |
+| 规模 | 完整仓库，任意大小 | 受浏览器内存限制（~5k 文件） |
+| 存储 | KuzuDB 原生（快速、持久化） | KuzuDB WASM（内存中，每会话） |
+| 解析 | Tree-sitter 原生绑定 | Tree-sitter WASM |
+| 隐私 | 完全本地，无网络调用 | 完全在浏览器中，无服务器 |
+
+- **知识图谱构建流程（五阶段）**：
+
+```
+阶段 1：结构扫描 (0-15%)
+  → 遍历文件系统，建立 File/Folder 节点
+
+阶段 2：AST 解析 (15-70%)
+  → 使用 Tree-sitter 并行解析
+  → 提取符号（函数、类、变量）
+
+阶段 3：导入解析 (70-75%)
+  → 语言感知的导入解析
+  → 建立 IMPORTS 关系
+
+阶段 4：调用解析 (75-80%)
+  → 建立 CALLS 关系（带置信度）
+
+阶段 5：继承解析 (80-85%)
+  → 提取 EXTENDS / IMPLEMENTS 关系
+  → 聚类、追踪、评分
+```
+
+- **支持的 7 个 MCP 工具**：
+
+```json
+impact    → 查询符号的调用者/被调用者影响范围
+query     → 自然语言查询代码库
+context   → 获取某个符号的完整上下文
+detect_changes → 检测代码变更的影响
+rename    → 安全重命名（追踪所有引用）
+cypher    → 直接查询图数据库
+graph     → 获取依赖图可视化
+```
+
+- **多语言支持**：TypeScript、JavaScript、Python、Java、Kotlin、C、C++、C#、Go、Rust、PHP、Swift 等 11+ 种
+
+- **安装使用**：
+
+```bash
+# 安装
+npm install -g gitnexus
+
+# 索引代码库
+npx gitnexus analyze
+
+# 配置 MCP
+npx gitnexus setup
+# 或
+claude mcp add gitnexus -- npx -y gitnexus@latest mcp
+
+# 启动 MCP 服务器
+gitnexus serve
+# MCP HTTP endpoints mounted at /api/mcp
+# GitNexus server running on http://127.0.0.1:4747
+
+# Web UI 探索
+npx gitnexus serve
+# 或访问 https://gitnexus.vercel.app/
+```
+
+- **适用场景**：
+  - 大型代码库（需要完整依赖关系理解）
+  - 重构场景（修改一个函数需要知道所有影响点）
+  - AI Agent 深度集成（Claude Code、Cursor、Windsurf）
+  - 隐私敏感（完全本地，无网络调用）
+
+#### 4. `gusye1234/nano-graphrag` ⭐ 轻量实现
 - **链接**：https://github.com/gusye1234/nano-graphrag
 - **核心特点**：剔除测试和 prompt 后约 800 行代码
 - **定位**：GraphRAG 的"小而美"版本，保留核心功能
@@ -528,7 +694,7 @@ EOF
 - **安装**：`pip install nano-graphrag` 或 `pip install lightrag-hku`
 - **模型支持**：OpenAI API、Ollama、本地模型
 
-#### 3. `big-data-ai/LightRAG` ⭐ 香港大学出品
+#### 5. `big-data-ai/LightRAG` ⭐ 香港大学出品
 - **链接**：https://github.com/big-data-ai/LightRAG
 - **核心优势**：索引速度比 GraphRAG **快 10 倍**
 - **架构**：
@@ -540,7 +706,7 @@ EOF
   - **轻量高效**：比 GraphRAG 轻量很多
 - **支持模型**：兼容 OpenAI 规范接口
 
-#### 4. `codeaudit/fast-graphrag` ⭐ 可解释 + 低成本
+#### 6. `codeaudit/fast-graphrag` ⭐ 可解释 + 低成本
 - **链接**：https://github.com/codeaudit/fast-graphrag
 - **核心特点**：
   - **成本降低 6 倍**：$0.08 vs GraphRAG $0.48（The Wizard of Oz 基准测试）
@@ -551,12 +717,12 @@ EOF
 - **适用**：需要复杂信息检索、对成本敏感的场景
 - **作者**：`circlemind-ai/fast-graphrag`（主库）
 
-#### 5. `graphrag/ms-graphrag` ⭐ 微软官方模块化分支
+#### 7. `graphrag/ms-graphrag` ⭐ 微软官方模块化分支
 - **链接**：https://github.com/graphrag/ms-graphrag
 - **定位**：微软 GraphRAG 的模块化版本，与主分支保持同步
 - **包结构**：`packages/` 目录提供模块化拆分
 
-#### 6. `trustgraph-ai/trustgraph` ⭐ 2026年新方案
+#### 8. `trustgraph-ai/trustgraph` ⭐ 2026年新方案
 - **链接**：https://github.com/trustgraph-ai/trustgraph
 - **核心定位**：图原生存储 + 多模型支持 + 语义检索管道
 - **特点**：
@@ -567,7 +733,7 @@ EOF
   - Pulsar Pub/Sub
 - **适用**：需要长期维护上下文的企业级场景
 
-#### 7. `code-rag-bench/code-rag-bench` ⭐ 代码 RAG 基准测试
+#### 9. `code-rag-bench/code-rag-bench` ⭐ 代码 RAG 基准测试
 - **链接**：https://github.com/code-rag-bench/code-rag-bench
 - **定位**：CodeRAG 基准测试，评估检索增强代码生成效果
 - **覆盖数据集**：
@@ -575,7 +741,7 @@ EOF
   - Open-Domain：DS-1000、Odex
   - Repository-Level：RepoEval、SWE-bench
 
-#### 8. `D-Star-AI/dsRAG` ⭐ 非结构化数据高性能检索
+#### 10. `D-Star-AI/dsRAG` ⭐ 非结构化数据高性能检索
 - **链接**：https://github.com/SuperpoweredAI/spRAG
 - **特点**：擅长处理复杂查询，在财务报表、法律文档、学术论文等场景精度显著高于 Vanilla RAG
 - **团队背景**：YC 校友创办的专业 AI 咨询公司
