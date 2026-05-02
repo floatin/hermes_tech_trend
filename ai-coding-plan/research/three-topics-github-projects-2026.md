@@ -1565,6 +1565,106 @@ Out-of-scope: user registration, password reset, session management
 
 ---
 
+## Topic D：高效精简 Token — RTK 与同类工具
+
+> AI 编程工具的隐性成本：上下文窗口消耗。RTK 通过 CLI 代理模式，在命令输出到达 LLM 之前进行智能过滤和压缩，将 Token 消耗降低 60-90%。
+
+### 核心问题
+
+| 问题 | 传统方案 | RTK 类方案 |
+|------|---------|-----------|
+| CLI 输出冗余 | 原样发送给 LLM | 过滤、压缩、去重 |
+| 重复执行耗 Token | 每次完整上下文 | 增量摘要 |
+| 大仓库访问 | 全量文件内容 | 增量只读修改部分 |
+| 日志噪音 | 完整堆栈 | 关键行提取 |
+
+### 代表性开源项目
+
+#### 1. `rtk-ai/rtk` ⭐ 25.9k
+- **链接**：https://github.com/rtk-ai/rtk
+- **语言**：Rust（单一二进制，零依赖，<10ms 开销）
+- **定位**：CLI 代理，拦截命令输出并压缩
+- **核心能力**：
+  - 智能过滤：ANSI 颜色码、重复空格、注释噪音
+  - 分组聚合：相似日志行合并为一条 + 计数
+  - 截断去重：超长输出截断 + 重复内容去重
+  - 命令提示：为常用命令生成自然语言提示
+- **Token 节省效果**（30 分钟 Claude Code 会话）：
+
+| 操作 | 频率 | 标准输出 | RTK 输出 | 节省 |
+|------|------|---------|---------|------|
+| ls / tree | 10x | 2,000 | 400 | 80% |
+| cat / read | 20x | 40,000 | 12,000 | 70% |
+| grep / rg | 8x | 16,000 | 3,200 | 80% |
+| git status | 10x | 3,000 | 600 | 80% |
+| git diff | 5x | 10,000 | 2,500 | 75% |
+| cargo test | 5x | 25,000 | 2,500 | 90% |
+| **总计** | - | ~118,000 | ~23,900 | **80%** |
+
+- **安装**：
+  ```bash
+  # macOS/Linux
+  brew install rtk
+  # 或
+  curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+  ```
+- **快速开始**：
+  ```bash
+  rtk init --global        # 为 Claude Code 安装 hook
+  git status              # 自动重写为 rtk git status
+  rtk gain                # 显示 Token 节省统计
+  ```
+
+#### 2. `jiaweifreshair/token-optimizer` ⭐ 新兴
+- **链接**：https://github.com/jiaweifreshair/token-optimizer
+- **定位**：Claude Code 专用 Token 优化器
+- **核心能力**：
+  - AutoContext：自动检测 transcript 行数/体积，超阈值注入 `<auto-context>` 提示
+  - suggest-compact：在 PreToolUse hook 中建议压缩
+  - 自动上下文清理：无需手动管理
+- **中文博客参考**：可搜索相关技术分析文章
+
+#### 3. `cyberchitta/llm-context.py` ⭐ 活跃
+- **链接**：https://github.com/cyberchitta/llm-context.py
+- **语言**：Python
+- **定位**：通过 MCP 协议或剪贴板分享代码给 LLM
+- **核心能力**：
+  - 智能选择：Rule-based 文件过滤和选择
+  - MCP 集成：支持 MCP 协议直接推送上下文
+  - 剪贴板模式：快速分享选定代码片段
+
+#### 4. `selective-context`（学术）
+- **链接**：自信息压缩学术方案
+- **定位**：基于信息论的 Prompt 压缩
+- **核心思想**：
+  - 使用语言模型计算每个 Token 的自信息
+  - 低自信息（可推断）的 Token 可被压缩
+  - 在多个 NLP 任务（摘要、QA）上验证有效
+
+#### 5. `llm-context-compressor` ⭐ 低星高价值
+- **链接**：https://github.com/shannonlal/llm-context-compressor
+- **语言**：Python
+- **定位**：LLM Prompt 压缩工具
+- **特点**：专注压缩，适合研究对比
+
+### RTK vs 其他方案对比
+
+| 工具 | 方式 | 压缩比 | 适用场景 | 复杂度 |
+|------|------|--------|---------|--------|
+| RTK | CLI 代理 | 60-90% | 通用命令输出 | 低 |
+| token-optimizer | Claude Code hook | 65%+ | Claude Code 专用 | 低 |
+| selective-context | Prompt 后处理 | 30-50% | 学术/定制 | 中 |
+| llm-context.py | MCP/剪贴板 | 依赖选择 | 文件分享 | 中 |
+
+### 工程实践建议
+
+1. **RTK 作为基础设施**：所有 AI Coding 项目标配
+2. **Claude Code 集成**：`rtk init --global` 自动配置 hook
+3. **自定义规则**：通过 `.rtk/config.toml` 配置特定命令的压缩策略
+4. **监控 `rtk gain`**：定期检查 Token 节省效果
+
+---
+
 ## Topic E：通过记忆系统管理和优化 AI 开发
 
 > Claude Code 等 AI 编程助手默认没有跨会话记忆——每次新会话都要重新介绍项目背景。记忆系统通过持久化上下文、智能压缩、按需检索三步，让 AI "记住"项目知识、决策历史和开发进展。
