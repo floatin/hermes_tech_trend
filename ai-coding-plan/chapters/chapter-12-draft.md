@@ -333,9 +333,150 @@ mempalace wake-up                                  # 生成唤醒上下文
 
 **MemPalace 最适合**：追求本地优先、需要跨项目上下文关联、对检索质量要求高的团队。
 
----
+### 12.3.5 Hindsight：仿生记忆 + 事实/经验/心智模型三层分离
 
-## 12.4 构建适合自己团队的记忈系统
+**代表项目**：`vectorize-io/hindsight` ⭐ 活跃（2025年12月发布，LongMemEval SOTA）
+
+**核心洞察**：大多数记忆系统只解决"回忆"（RAG），Hindsight 解决的是"学习"——让 Agent 不仅能记住，还能从经验中形成自己的认知模型。
+
+**三层仿生记忆架构**：
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    HINDSIGHT 记忆架构                         │
+├──────────────────────────────────────────────────────────────┤
+│  WORLD FACTS（世界事实层）                                    │
+│    客观知识，"百科全书"，静态可验证                           │
+│    例："Python 装饰器在运行时执行"                            │
+├──────────────────────────────────────────────────────────────┤
+│  EXPERIENCES（经验层）                                        │
+│    Agent 自身的交互经历，含完整上下文和结果                   │
+│    例："用户问装饰器，我用 @functools.wraps 解决了"         │
+├──────────────────────────────────────────────────────────────┤
+│  MENTAL MODELS（心智模型层）                                  │
+│    从经验中抽象出的规律，支持推理和预测                       │
+│    例："用户偏好简洁代码示例，先给结论再解释"                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**三种核心操作**：
+
+```python
+from hindsight_client import Hindsight
+
+client = Hindsight(base_url="http://localhost:8888")
+
+# Retain：存储记忆
+client.retain(bank_id="my-bank", content="用户Alice偏好简洁代码示例")
+
+# Recall：检索记忆
+client.recall(bank_id="my-bank", query="Alice有什么偏好？")
+
+# Reflect：反思——从已有记忆生成新洞察
+client.reflect(bank_id="my-bank", query="Alice的学习风格是什么？")
+```
+
+**关键创新**：`reflect` 操作让 Agent 能从记忆生成新洞察，而不只是回溯。这是与传统 RAG 的本质区别——Hindsight 是**学习系统**，而不只是**检索系统**。
+
+**Benchmark 表现**：LongMemEval SOTA（2026年1月），由 Virginia Tech 独立复现验证。
+
+**安装使用**：
+
+```bash
+# Docker 一键启动（推荐）
+export OPENAI_API_KEY=***
+docker run --rm -it -p 8888:8888 -p 9999:9999 \
+  -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \
+  ghcr.io/vectorize-io/hindsight:latest
+
+# Python SDK
+pip install hindsight-client -U
+
+# 2行代码接入
+from hindsight_client import Hindsight
+client = Hindsight(base_url="http://localhost:8888")  # 自动记忆存储和检索
+```
+
+### 12.3.6 Honcho：实体为中心 + 时间感知
+
+**代表项目**：`plastic-labs/honcho` ⭐ 活跃（500 Commits，多语言 SDK）
+
+**核心洞察**：Honcho 将记忆围绕**实体**（用户、Agent、想法）组织，并内置时间感知——它理解实体随时间变化的事实。这解决了"用户去年说喜欢X，但现在喜欢Y"这类时序一致性问题。
+
+**核心概念**：
+
+```python
+from honcho import Honcho
+
+# 1. 初始化 Workspace
+honcho = Honcho(workspace_id="my-app")
+
+# 2. 创建实体（Peer）
+alice = honcho.peer("alice")      # 用户实体
+tutor = honcho.peer("tutor")      # Agent 实体
+
+# 3. 创建会话（Session）
+session = honcho.session("session-1")
+session.add_messages([
+    alice.message("你能帮我辅导数学作业吗？"),
+    tutor.message("当然可以，发来第一道题！")
+])
+
+# 4. 利用记忆推理
+response = alice.chat("用户最佳的学习风格是什么？")
+context = session.context(summary=True, tokens=10_000)
+results = alice.search("数学作业")
+```
+
+**关键创新**：
+
+1. **Peer（实体）概念**：每个实体（用户/Agent）有独立的记忆空间
+2. **时序感知**：Honcho 理解实体状态随时间的变化
+3. **多语言 SDK**：Python + TypeScript 官方支持
+4. **Managed Service**：有托管服务，也支持自部署
+
+**架构特点**：
+
+```
+Honcho 核心架构
+├── Storage（PostgreSQL + pgvector）
+├── Reasoning（LLM 驱动的推理层）
+│   ├── Deriver：生成表示、摘要、Peer 卡片
+│   └── Dreamer：异步记忆整合
+└── Retrieval（自然语言查询 + 语义搜索）
+```
+
+**Benchmark**：Honcho 声称定义了"Agent Memory 的 Pareto 前沿"，有独立的 [evals.honcho.dev](https://evals.honcho.dev/) 评测页面。
+
+**安装使用**：
+
+```bash
+# Python
+pip install honcho-ai
+
+# TypeScript
+npm install @honcho-ai/sdk
+
+# Docker 快速体验
+cp docker-compose.yml.example docker-compose.yml
+docker compose up -d database
+uv run alembic upgrade head
+uv run fastapi dev src/main.py
+```
+
+### 12.3.7 六系统综合对比
+
+| 维度 | claude-mem | engram | agentmemory | MemPalace | Hindsight | Honcho |
+|------|------------|--------|-------------|-----------|-----------|--------|
+| 存储哲学 | LLM 摘要 | 原始文本 | 混合 | 逐字+AAAK | 事实/经验/心智 | 实体+时序 |
+| 组织结构 | 平坦 | 平坦 | 平坦 | 宫殿结构 | 三层仿生 | Peer/Session |
+| 知识图谱 | ❌ | ❌ | 基础 | 时序图谱 | 关系图谱 | 实体图谱 |
+| 检索性能 | 未公布 | 未公布 | 未公布 | **96.6% R@5** | **LongMemEval SOTA** | Pareto 前沿 |
+| API 调用 | 需要 | 需要 | 需要 | 零API(原始) | 需要 | 需要 |
+| 学习能力 | 检索 | 检索 | 检索 | 检索 | **Reflect 反思** | 推理增强 |
+| 多语言 SDK | Claude 专用 | MCP | Python | Python | Py/TS/多 | **Py/TS** |
+| 星星数 | 59k | 较小 | 较小 | 50.7k | 活跃 | 活跃 |
+| 适合场景 | Claude 用户 | 多 Agent | 企业级 | 本地优先+高质量 | **学习型 Agent** | 多用户+时序 |
 
 ### 12.4.1 最小化方案：使用 claude-mem
 
