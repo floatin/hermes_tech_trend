@@ -253,6 +253,235 @@ L3 资源层（文件引用）：
 
 ---
 
+### 深度专题：OpenSpec + Agent Skills = 规范层 × 执行层
+
+#### 核心定位
+
+| 工具 | 层级 | 核心职责 | 类比 |
+|------|------|---------|------|
+| **OpenSpec** | 规范层（Spec/Proposal/Design） | "做什么"——需求边界、接口契约、验收标准 | 施工图纸 |
+| **Agent Skills** | 执行层（Skills/Rules） | "怎么做"——代码模式、工程规范、工具使用 | 施工规范手册 |
+| **Harness** | 协作层（PR/CI/Git Hooks） | "谁来做+做到哪"——角色分工、任务调度、质量门禁 | 项目经理 |
+
+OpenSpec 管"需求和验收"，Agent Skills 管"代码怎么写"，两者组合才能覆盖"需求→规范→执行"完整链路。
+
+#### OpenSpec 深度解析 ⭐ 44.6k
+
+**链接**：https://github.com/Fission-AI/OpenSpec
+
+**核心理念**：`fluid not rigid, iterative not waterfall`
+
+```
+典型工作流：
+You: /opsx:propose add-dark-mode
+AI:  Created openspec/changes/add-dark-mode/
+     ✓ proposal.md — 为什么做，改变了什么
+     ✓ specs/       — 需求和场景
+     ✓ design.md    — 技术方案
+     ✓ tasks.md     — 实施检查清单
+     Ready for implementation!
+
+You: /opsx:apply
+AI:  Implementing tasks...
+     ✓ 1.1 Add theme context provider
+     ✓ 1.2 Create toggle component
+     All tasks complete!
+
+You: /opsx:archive
+AI:  Archived to openspec/changes/archive/2025-01-23-add-dark-mode/
+     Specs updated. Ready for the next feature.
+```
+
+**目录结构**（以 Claude Code 为例）：
+```
+.claude/
+  commands/openspec/
+    apply.md     # 执行已批准的变更
+    archive.md   # 归档已完成的变更
+    proposal.md  # 发起新变更提案
+  AGENTS.md      # AI 工作规则
+
+openspec/
+  specs/         # 当前系统规范（当前真理源）
+    project.md   # 项目级别约定
+  changes/       # 变更提案
+    feature-name/
+      proposal.md
+      design.md
+      tasks.md
+  config.yaml
+```
+
+**与 Superpowers 的分工**：
+
+| 维度 | OpenSpec | Superpowers |
+|------|----------|-------------|
+| 定位 | 规范层——锁定"做什么" | 执行层——强制"怎么做" |
+| 工作流 | Proposal → Spec → Design → Task → Apply → Archive | TDD → YAGNI → Review |
+| 入口 | `/opsx:propose` | `/plugin install superpowers` |
+| 适用场景 | 需求不明确、需要先对齐 | 需求明确、需要强制执行 |
+
+**OpenSpec 1.0 核心命令**：
+
+| 命令 | 作用 |
+|------|------|
+| `/opsx:propose <idea>` | 创建变更脚手架（proposal + specs + design + tasks） |
+| `/opsx:apply` | 执行已批准的变更 |
+| `/opsx:archive` | 归档已完成变更 |
+| `/opsx:new` | 新建变更 |
+| `/opsx:continue` | 继续未完成变更 |
+| `/opsx:verify` | 验证实现是否符合规范 |
+
+**安装方式**：
+```bash
+npm install -g @fission-ai/openspec@latest
+cd your-project
+openspec init
+# 选择 AI 工具：Claude Code / Cursor / Trae / Qoder 等
+openspec update  # 刷新 AI 指令
+```
+
+#### Agent Skills 深度解析 ⭐ 26k（vercel-labs）
+
+**链接**：https://github.com/vercel-labs/agent-skills
+
+**结构**：
+```
+skills/
+  react-best-practices/     # Vercel 10年React经验
+    SKILL.md               # 核心指令（70条规则，8个优先级分类）
+    AGENTS.md              # 完整规则展开
+    rules/                  # 独立规则文件
+      async-parallel.md
+      bundle-barrel-imports.md
+  composition-patterns/     # 组合模式
+  deploy-to-vercel/         # 部署技能
+  react-native-skills/       # React Native
+  react-view-transitions/    # View Transitions
+  vercel-cli-with-tokens/    # CLI Token管理
+  web-design-guidelines/      # Web设计规范
+```
+
+**SKILL.md 标准格式**（vercel-react-best-practices 为例）：
+```yaml
+---
+name: vercel-react-best-practices
+description: React and Next.js performance optimization guidelines 
+  from Vercel Engineering. This skill should be used when writing, 
+  reviewing, or refactoring React/Next.js code to ensure optimal 
+  performance patterns. Triggers on tasks involving React components, 
+  Next.js pages, data fetching, bundle optimization, or performance 
+  improvements.
+license: MIT
+metadata:
+  author: vercel
+  version: "1.0.0"
+---
+```
+
+**规则分类**（70条规则，按优先级）：
+
+| 优先级 | 分类 | 前缀 | 影响 |
+|--------|------|------|------|
+| CRITICAL | Eliminating Waterfalls | `async-` | 避免异步瀑布 |
+| CRITICAL | Bundle Size | `bundle-` | 减小包体积 |
+| HIGH | Server-Side Performance | `server-` | 服务端性能 |
+| MEDIUM-HIGH | Client-Side Data Fetching | `client-` | 客户端数据获取 |
+| MEDIUM | Re-render Optimization | `rerender-` | 减少重渲染 |
+| LOW-MEDIUM | JavaScript Performance | `js-` | JS执行效率 |
+| LOW | Advanced Patterns | `advanced-` | 高级模式 |
+
+#### OpenSpec + Agent Skills 结合使用
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    人类开发者                             │
+│  需求：给电商网站添加深色模式                              │
+└─────────────────────┬───────────────────────────────────┘
+                      │ /opsx:propose "add dark mode"
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│              OpenSpec（规范层）                           │
+│  ✓ proposal.md — 为什么做（用户体验、无障碍）              │
+│  ✓ specs/       — 需求规格（配色变量、切换逻辑）           │
+│  ✓ design.md    — 技术方案（CSS变量、Tailwind配置）       │
+│  ✓ tasks.md     — 实施清单                               │
+└─────────────────────┬───────────────────────────────────┘
+                      │ /opsx:apply
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│           Agent Skills（执行层）                          │
+│  加载 vercel-react-best-practices                        │
+│  → 规则：rerender-no-inline-components                   │
+│  → 规则：js-early-exit                                  │
+│  → 规则：bundle-dynamic-imports                          │
+│  → 规则：server-hoist-static-io                          │
+└─────────────────────┬───────────────────────────────────┘
+                      │ 代码生成
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│           PR / CI（约束层）                               │
+│  ✓ 文件数量上限：≤5个文件                                │
+│  ✓ 测试通过：Jest + Playwright                          │
+│  ✓ Human Review：确认改动范围                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+**安装 Skills 到 OpenSpec 项目**：
+```bash
+# 初始化 OpenSpec
+npm install -g @fission-ai/openspec@latest
+cd your-project && openspec init
+
+# 安装 Vercel React 最佳实践
+npx skills add vercel-labs/agent-skills/skills/react-best-practices
+
+# 安装 Claude Code 相关
+npx skills add anthropics/claude-code-skills
+
+# 在 AGENTS.md 中引用 Skills
+cat >> openspec/specs/project.md << 'EOF'
+## Active Skills
+
+当涉及 React/Next.js 开发时，自动激活：
+- vercel-react-best-practices
+- tailwind-css-patterns
+EOF
+```
+
+#### 三层拼图完整视图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 规范层：OpenSpec                                             │
+│ → 锁定"做什么"                                               │
+│ → 目录：openspec/specs/, openspec/changes/                  │
+│ → 入口：/opsx:propose → /opsx:apply → /opsx:archive         │
+├─────────────────────────────────────────────────────────────┤
+│ 执行层：Agent Skills                                         │
+│ → 强制"怎么做"                                               │
+│ → 目录：skills/*.md, rules/*.md                              │
+│ → 加载：skills CLI + SKILL.md 元数据                         │
+├─────────────────────────────────────────────────────────────┤
+│ 约束层：Harness（PR/CI/Git Hooks）                           │
+│ → 监控"做到哪"                                               │
+│ → 目录：.github/workflows/, .claude/hooks/                  │
+│ → 工具：Git Worktree、CI Pipeline、ratchet tests            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 实践建议：程序员的 Harness 工作流
+
+| 阶段 | 产出物 | 工具 |
+|------|--------|------|
+| 需求对齐 | `proposal.md` + `specs/*.md` | OpenSpec |
+| 方案设计 | `design.md` + `tasks.md` | OpenSpec |
+| 代码执行 | 符合规范的代码 | Agent Skills |
+| 质量门禁 | 通过 CI + Tests | GitHub Actions |
+| Human Review | PR 审核 | GitHub PR |
+| 归档复盘 | `archive/` | OpenSpec |
+
+---
 ### 趋势总结
 
 | 方向 | 结论 |
@@ -262,6 +491,7 @@ L3 资源层（文件引用）：
 | 最强工程规范方案 | `superpowers`（34k stars，Claude 官方认证）|
 | 膨胀管理 | 三层加载机制（L1触发/L2执行/L3资源）是行业共识 |
 | 新趋势 | "蒸馏 Skill"（人物技能包）成为2026年新风口 |
+| OpenSpec + Skills 结合 | 规范层 × 执行层 = 完整 Harness |
 
 ---
 
