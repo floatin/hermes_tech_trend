@@ -179,13 +179,159 @@ engram server --port 8080
 - 支持 `doctor` 命令自检
 - 内置文件压缩工具
 
-### 12.3.4 对比表
+### 12.3.4 MemPalace：宫殿记忆术 + 本地优先
 
-| 系统 | 存储 | Agent 支持 | 安装难度 | 适合场景 |
-|------|------|-----------|---------|---------|
-| claude-mem | SQLite + Chroma | Claude Code 专用 | ⭐ 一键 | Claude Code 用户 |
-| engram | SQLite FTS5 | MCP 兼容 | ⭐ 简单 | 多 Agent 团队 |
-| agentmemory | Chroma + PG | 多 Agent | ⭐⭐ 中等 | 企业级 |
+**代表项目**：`MemPalace/mempalace` ⭐ 50.7k（2026年4月发布，2天2.6万 Star）
+
+**背景**：由演员 Milla Jovovich 与技术合伙人 Ben Sigman 联合发布，灵感来自古希腊"记忆宫殿"（Method of Loci）。它解决了一个根本问题——大多数记忆系统只是"大容量仓库"，而 MemPalace 实现了**按空间结构索引 + 语义检索**的双通道记忆。
+
+**核心洞察：记忆宫殿的空间哲学**
+
+古代演说家在想象中行走于建筑各处记忆演讲内容——每个房间存放一个念头。MemPalace 将此工程化：
+
+```
+MEMORY PALACE
+├── WING（侧楼）     → 一个人物或一个项目
+│   └── Room A      → 特定话题（如 auth-migration）
+│       ├── Hall    → 概念分类（decisions/diary/explore）
+│       │   ├── Closet → AAAK 压缩摘要（指向抽屉的指针）
+│       │   └── Drawer → 逐字原文（向量检索层）
+│       └── Hall    → 另一个分类
+├── WING（另一个项目）
+└── Tunnel          → Wing 之间的跨项目连接
+```
+
+**三层核心创新**：
+
+#### 创新1：逐字存储（Verbatim Storage）
+
+MemPalace **不摘要、不提取、不改写**。原始对话直接存入 Drawer：
+
+```
+传统 RAG：对话 → LLM 摘要 → 丢失细节 → 检索质量下降
+MemPalace：对话 → 逐字存入 Drawer → 语义向量检索 → 96.6% R@5（零 API）
+```
+
+#### 创新2：AAAK 方言压缩
+
+AAAK（实验性有损缩写系统）专为 AI 可读压缩设计：
+
+```python
+# 输入：Kai 今天说 auth-migration 项目已完成了，Maya 曾负责此项目
+
+# AAAK 输出示例
+HEADER: F003|KAI|2026-05-02|auth-migration complete
+ZETTEL: Z003:[KAI,MAYA,AUTH-MIGRATION]|project_complete|"complete"|9|vul,joy|DECISION,TECHNICAL
+```
+
+- **实体编码**：KAI=Kai，MAYA=Maya（三字母大写）
+- **情绪编码**：vul=vulnerability，joy=joy
+- **标记位**：DECISION/TECHNICAL/PIVOT 等
+- 无需解码器，任何 LLM 直接阅读
+
+当前 AAAK 模式得分 84.2% R@5（vs 原始 96.6%），仍在迭代。
+
+#### 创新3：时序知识图谱
+
+内置 SQLite 图谱引擎，存储"实体-关系-时间窗"三元组：
+
+```python
+from mempalace.knowledge_graph import KnowledgeGraph
+kg = KnowledgeGraph()
+
+# 添加带时间窗的事实
+kg.add_triple("Kai", "works_on", "Orion", valid_from="2025-06-01")
+kg.add_triple("Maya", "assigned_to", "auth-migration", valid_from="2026-01-15")
+kg.add_triple("Maya", "completed", "auth-migration", valid_from="2026-02-01")
+
+# 当前查询（自动排除过期事实）
+kg.query_entity("Maya")
+# → completed 有效，assigned 已排除
+
+# 时间旅行查询
+kg.query_entity("Maya", as_of="2026-01-20")
+# → 当时 Maya 还在做 auth-migration
+```
+
+**关键价值**：技术决策变更时，旧决策不删除而标记 `invalidated`。AI 能理解"为什么当时选 PostgreSQL 而非 MySQL"——以及"后来为什么换了"。
+
+#### 创新4：4层记忆栈（Memory Stack）
+
+分层渐进加载，而非一股脑注入全部记忆：
+
+| 层级 | 内容 | Token | 触发 |
+|------|------|-------|------|
+| L0 Identity | 身份文件 | ~50-100 | **始终** |
+| L1 Essential Story | 最重要时刻摘要 | ~500-800 | **始终** |
+| L2 On-Demand Recall | Wing/Room 过滤检索 | 200-500/次 | 话题出现 |
+| L3 Deep Search | 全量语义搜索 | 可变 | 显式提问 |
+
+```python
+from mempalace.layers import MemoryStack
+stack = MemoryStack()
+
+# 典型唤醒：L0 + L1 = ~600-900 tokens
+wake = stack.wake_up()
+
+# 按 Wing 检索（L2）
+auth = stack.recall(wing="myapp", room="auth-migration")
+
+# 深度搜索（L3）
+results = stack.search("为什么从 JWT 换到 Session")
+```
+
+#### MCP 工具生态
+
+29个 MCP 工具覆盖宫殿读写、知识图谱、跨 Wing 导航：
+
+```javascript
+// 跨 Wing 发现共享话题
+mcp工具: mempalace_traverse
+  → 发现 auth-migration 同时出现在 wing_kai, wing_driftwood
+
+// 知识图谱操作
+mempalace_kg_query      // 时序实体查询
+mempalace_kg_add        // 添加事实
+mempalace_kg_invalidate // 标记过期
+mempalace_kg_timeline   // 时间线故事
+```
+
+#### 性能基准（可100%复现）
+
+| 基准 | 指标 | 分数 | 说明 |
+|------|------|------|------|
+| LongMemEval（500题） | R@5 | **96.6%** | 零 API，纯原始检索 |
+| LongMemEval（450题 held-out） | R@5 | **98.4%** | 混合模式泛化分数 |
+| LoCoMo | R@10 | 88.9% | 混合模式 |
+| ConvoMem | Avg Recall | 92.9% | 250条目 |
+
+#### 安装与使用
+
+```bash
+pip install mempalace
+mempalace init ~/projects/myapp
+
+# CLI
+mempalace mine ~/projects/myapp                    # 挖掘项目文件
+mempalace mine ~/.claude/projects/ --mode convos   # 挖掘会话
+mempalace search "为什么切换到 GraphQL"
+mempalace wake-up                                  # 生成唤醒上下文
+```
+
+### 12.3.5 四系统对比
+
+| 维度 | claude-mem | engram | agentmemory | **MemPalace** |
+|------|------------|--------|-------------|---------------|
+| 存储哲学 | LLM 摘要 | 原始文本 | 混合 | **逐字 + AAAK 可选** |
+| 组织结构 | 平坦 | 平坦 | 平坦 | **宫殿结构** |
+| 知识图谱 | ❌ | ❌ | 基础 | **时序图谱（SQLite）** |
+| 压缩方案 | LLM 摘要 | 无 | 无 | **AAAK 方言** |
+| 检索性能 | 未公布 | 未公布 | 未公布 | **96.6% R@5** |
+| API 调用 | 需要 | 需要 | 需要 | **零 API（原始）** |
+| 安装 | ⭐ 一键 | ⭐ 简单 | ⭐⭐ | **⭐ 简单** |
+| 星星数 | 59k | 较小 | 较小 | **50.7k** |
+
+**MemPalace 最适合**：追求本地优先、需要跨项目上下文关联、对检索质量要求高的团队。
 
 ---
 
