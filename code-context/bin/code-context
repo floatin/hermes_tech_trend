@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""
+code-context: 统一代码上下文 CLI
+封装语义搜索和知识图谱查询，对外提供简洁接口
+
+Usage:
+    code-context search <query>       语义搜索代码
+    code-context who-calls <func>    查询函数调用者
+    code-context calls <func>        同 who-calls
+    code-context impact <symbol>      分析变更影响范围
+    code-context graph [--focus <path>] 生成依赖图
+    code-context index [--force]     重建索引
+    code-context status              查看索引状态
+    code-context help                显示帮助
+"""
+
+import argparse
+import subprocess
+import json
+import os
+import shutil
+import sys
+import re
+from pathlib import Path
+
+# 配置
+CONFIG_DIR = Path.home() / ".code-context"
+INDEX_DIR = CONFIG_DIR / "index"
+CACHE_FILE = CONFIG_DIR / "cache.json"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+# 颜色输出
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+
+
+def color(text: str, code: str) -> str:
+    """给文本添加颜色"""
+    if not sys.stdout.isatty():
+        return text
+    return f"{code}{text}{RESET}"
+
+
+def error(msg: str):
+    print(color(f"Error: {msg}", RED), file=sys.stderr)
+
+
+def info(msg: str):
+    print(color(msg, BLUE))
+
+
+def success(msg: str):
+    print(color(msg, GREEN))
+
+
+def warn(msg: str):
+    print(color(f"Warning: {msg}", YELLOW))
+
+
+def ensure_config_dir():
+    """确保配置目录存在"""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_config() -> dict:
+    """加载配置"""
+    ensure_config_dir()
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    return {
+        "codebase_path": os.getcwd(),
+        "indexed": False,
+        "last_index": None,
+        "gitnexus_enabled": False,
+        "claude_context_enabled": False,
+    }
+
+
+def save_config(config: dict):
+    """保存配置"""
+    ensure_config_dir()
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def check_command(cmd: str) -> bool:
+    """检查命令是否存在且可用"""
+    result = subprocess.run(
+        ["which", cmd], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return False
+    # 测试命令是否真正可用
+    test = subprocess.run(
+        [cmd, "--version"], capture_output=True, text=True, timeout=5
+    )
+    if test.returncode == 0 and test.stdout.strip():
+        return True
+    # 有些命令没有 --version，尝试 --help
+    test = subprocess.run(
+        [cmd, "--help"], capture_output=True, text=True, timeout=5
+    )
+    return test.returncode in (0, 1)
+
+
+def check_dependencies():
+    """检查依赖是否安装"""
+    deps = {
+        "claude-context": check_command("claude-context"),
+        "gitnexus": check_command("gitnexus"),
+        "npx": check_command("npx"),
+    }
+    return deps
+
+
+def print_status():
+    """打印状态信息"""
+    config = load_config()
+    deps = check_dependencies()
+
+    print(f"\n{BOLD}📊 Code Context Status{RESET}\n")
+    print(f"  Project: {config.get('codebase_path', 'Not set')}")
+    print(f"  Indexed: {color('Yes ✓', GREEN) if config.get('indexed') else color('No ✗', RED)}")
+
+    if config.get("last_index"):
+        print(f"  Last index: {config['last_index']}")
+
+    print(f"\n{BOLD}Dependencies:{RESET}")
+    for name, available in deps.items():
+        status = color("✓ installed", GREEN) if available else color("✗ not found", RED)
+        print(f"  {name}: {status}")
+
+    if not any(deps.values()):
+        print(f"\n  {YELLOW}No dependencies found. Install with:{RESET}")
+        print(f"    npm install -g claude-context gitnexus")
+
+
+def cmd_search(query: str) -> int:
+    """语义搜索"""
+    if not check_command("claude-context"):
+        # 降级：使用 grep 简单搜索
+        warn("claude-context not installed, using fallback search")
+        return fallback_search(query)
+
+    # claude-context 使用 hooks + generate 进行语义搜索
+    # 先尝试 gitnexus query（知识图谱搜索）
+    if check_command("gitnexus"):
+        result = subprocess.run(
+            ["gitnexus", "query", query],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            print(f"{BOLD}Knowledge Graph Search:{RESET}")
+            print(result.stdout)
+            return 0
+
+    # 降级到 grep
+    warn("Using fallback grep search")
+    return fallback_search(query)
+
+
+def fallback_search(query: str) -> int:
+    """降级搜索：使用 grep"""
+    print(f"{BOLD}Fallback search (grep):{RESET} '{query}'\n")
+
+    # 获取项目根目录
+    root = Path(os.getcwd())
+    for parent in [root] + list(root.parents):
+        if (parent / ".git").exists() or (parent / "package.json").exists():
+            root = parent
+            break
+
+    # 单个 grep 命令，多种文件类型
+    extensions = "*.py *.js *.ts *.jsx *.tsx *.go *.java *.rs *.rb *.php *.c *.cpp *.h *.hpp *.cs *.swift *.kt *.vue *.svelte *.md *.yaml *.yml *.json *.toml"
+    include_args = []
+    for ext in extensions.split():
+        include_args.extend(["--include", ext])
+
+    try:
+        result = subprocess.run(
+            ["grep", "-rn"] + include_args + [query, str(root)],
+            capture_output=True, text=True, timeout=15
+        )
+
+        if result.stdout:
+            lines = result.stdout.strip().split("\n")[:20]
+            for line in lines:
+                print(line)
+            total = len(result.stdout.strip().split("\n"))
+            print(f"\n{color(f'Found {total} matches (showing first {len(lines)})', GREEN)}")
+            return 0
+        else:
+            print("No matches found")
+            return 1
+    except subprocess.TimeoutExpired:
+        error("Search timed out")
+        return 1
+    except Exception as e:
+        error(f"Search error: {e}")
+        return 1
+
+
+def cmd_who_calls(func: str) -> int:
+    """查询函数调用者"""
+    if not check_command("gitnexus"):
+        warn("gitnexus not installed, showing manual approach")
+        print(f"\nTo find callers of '{func}', you can:")
+        print(f"  grep -rn '{func}' --include='*.py' . | grep -v 'def {func}' | grep -v '{func}('")
+        return fallback_who_calls(func)
+
+    # gitnexus context 命令可以查看符号的调用者/被调用者
+    result = subprocess.run(
+        ["gitnexus", "context", func],
+        capture_output=True, text=True, timeout=30
+    )
+
+    if result.returncode == 0 and result.stdout.strip():
+        print(f"{BOLD}Context for '{func}':{RESET}")
+        print(result.stdout)
+        return 0
+    else:
+        # 降级
+        warn(f"gitnexus context failed, using fallback")
+        return fallback_who_calls(func)
+
+
+def fallback_who_calls(func: str) -> int:
+    """降级：使用 grep 查找调用"""
+    print(f"\n{BOLD}Finding callers of '{func}':{RESET}\n")
+
+    try:
+        result = subprocess.run(
+            ["grep", "-rn", "--include=*.py", "--include=*.js", "--include=*.ts",
+             f"'\\b{func}\\b'", "."],
+            capture_output=True, text=True, timeout=10
+        )
+
+        if result.stdout:
+            lines = [l for l in result.stdout.strip().split("\n")
+                     if f"def {func}" not in l and f"class {func}" not in l]
+            if lines:
+                for line in lines[:15]:
+                    print(line)
+                print(f"\n{color(f'Found {len(lines)} calls (showing first {min(15, len(lines))})', GREEN)}")
+            else:
+                print("No external calls found")
+        else:
+            print("No calls found")
+        return 0
+    except Exception as e:
+        error(f"Query error: {e}")
+        return 1
+
+
+def cmd_calls(func: str) -> int:
+    """calls 的别名"""
+    return cmd_who_calls(func)
+
+
+def cmd_impact(symbol: str) -> int:
+    """分析变更影响"""
+    if not check_command("gitnexus"):
+        warn("gitnexus not installed, using fallback")
+        return fallback_impact(symbol)
+
+    # gitnexus impact 进行blast radius分析
+    result = subprocess.run(
+        ["gitnexus", "impact", symbol],
+        capture_output=True, text=True, timeout=30
+    )
+
+    if result.returncode == 0 and result.stdout.strip():
+        print(f"{BOLD}Impact analysis for '{symbol}':{RESET}")
+        print(result.stdout)
+        return 0
+    else:
+        warn(f"gitnexus impact failed, using fallback")
+        return fallback_impact(symbol)
+
+
+def fallback_impact(symbol: str) -> int:
+    """降级：简单影响分析"""
+    print(f"\n{BOLD}Impact analysis for '{symbol}':{RESET}\n")
+
+    # 找定义
+    try:
+        def_result = subprocess.run(
+            ["grep", "-rn", "--include=*.py",
+             f"'\\bdef {symbol}\\b\\|\\bclass {symbol}\\b'", "."],
+            capture_output=True, text=True, timeout=10
+        )
+
+        # 找调用
+        call_result = subprocess.run(
+            ["grep", "-rn", "--include=*.py",
+             f"'\\b{symbol}\\b'", "."],
+            capture_output=True, text=True, timeout=10
+        )
+
+        definitions = def_result.stdout.strip().split("\n") if def_result.stdout else []
+        calls = [l for l in (call_result.stdout.strip().split("\n") if call_result.stdout else [])
+                 if f"def {symbol}" not in l and f"class {symbol}" not in l]
+
+        print(f"  Definition: {len(definitions)} location(s)")
+        print(f"  References: {len(calls)} location(s)")
+
+        if calls:
+            print(f"\n  {BOLD}Called from:{RESET}")
+            for call in calls[:10]:
+                print(f"    {call}")
+            if len(calls) > 10:
+                print(f"    ... and {len(calls) - 10} more")
+
+        return 0
+    except Exception as e:
+        error(f"Analysis error: {e}")
+        return 1
+
+
+def cmd_graph(focus: str = ".") -> int:
+    """生成依赖图"""
+    # 尝试使用 gitnexus
+    if shutil.which("gitnexus"):
+        try:
+            subprocess.run(["gitnexus", "analyze", focus], check=True, timeout=60)
+            return 0
+        except subprocess.CalledProcessError:
+            pass
+        except Exception:
+            pass
+
+    # Fallback: 使用简单文件依赖分析
+    print(f"{BOLD}Dependency Graph (fallback mode){RESET}")
+    print(f"Focus: {focus or '(all)'}\n")
+
+    root = Path(os.getcwd())
+    for parent in [root] + list(root.parents):
+        if (parent / ".git").exists() or (parent / "package.json").exists():
+            root = parent
+            break
+
+    # 统计文件结构
+    stats = {}
+    for ext in [".py", ".js", ".ts", ".go", ".java"]:
+        count = sum(1 for _ in root.rglob(f"*{ext}"))
+        if count:
+            stats[ext] = count
+
+    if stats:
+        print(f"{GREEN}File counts by language:{RESET}")
+        for ext, count in sorted(stats.items()):
+            print(f"  {ext}: {count} files")
+        print()
+
+    # 显示目录结构
+    if focus:
+        focus_path = root / focus
+        if focus_path.exists():
+            print(f"{BOLD}Directory structure:{RESET}")
+            try:
+                result = subprocess.run(
+                    ["find", str(focus_path), "-type", "f", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/.git/*"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.stdout:
+                    files = result.stdout.strip().split("\n")[:30]
+                    for f in files:
+                        rel = Path(f).relative_to(root)
+                        print(f"  {rel}")
+            except:
+                pass
+    else:
+        print(f"{BOLD}Top-level structure:{RESET}")
+        try:
+            result = subprocess.run(
+                ["find", str(root), "-maxdepth", "2", "-type", "d", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/.git/*"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.stdout:
+                dirs = sorted(set(result.stdout.strip().split("\n")))
+                for d in dirs[:15]:
+                    rel = Path(d).relative_to(root)
+                    if str(rel) != ".":
+                        print(f"  {rel}/")
+        except:
+            pass
+
+    print(f"\n{YELLOW}Tip: Install gitnexus for full dependency analysis:{RESET}")
+    print(f"  npm install -g gitnexus")
+    return 0
+
+
+def cmd_index(force: bool = False) -> int:
+    """重建索引"""
+    ensure_config_dir()
+
+    deps = check_dependencies()
+
+    if not deps.get("npx"):
+        error("npx not found, cannot proceed")
+        return 1
+
+    print(f"\n{BOLD}🔄 Building code index...{RESET}\n")
+
+    indexed = False
+
+    # 索引 claude-context
+    if deps.get("claude-context"):
+        info("Indexing with claude-context...")
+        result = subprocess.run(
+            ["claude-context", "index"],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            success("claude-context indexing complete")
+            indexed = True
+        else:
+            warn(f"claude-context indexing failed: {result.stderr}")
+
+    # 索引 gitnexus
+    if deps.get("gitnexus"):
+        info("Indexing with gitnexus...")
+        result = subprocess.run(
+            ["npx", "gitnexus", "analyze"],
+            capture_output=True, text=True, timeout=180
+        )
+        if result.returncode == 0:
+            success("gitnexus indexing complete")
+            indexed = True
+        else:
+            warn(f"gitnexus indexing failed: {result.stderr}")
+
+    # 更新配置
+    config = load_config()
+    config["indexed"] = indexed
+    config["codebase_path"] = os.getcwd()
+    from datetime import datetime
+    config["last_index"] = datetime.now().isoformat()
+    save_config(config)
+
+    if indexed:
+        success("\n✅ Indexing complete!")
+    else:
+        warn("\n⚠️ Indexing completed with warnings")
+        print("\nYou can still use fallback search with grep.")
+
+    return 0 if indexed else 1
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=color("code-context: 统一代码上下文 CLI", BOLD),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  code-context search "用户认证"
+  code-context who-calls PaymentService
+  code-context impact UserService
+  code-context graph --focus auth/
+  code-context index
+  code-context status
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # search
+    p_search = subparsers.add_parser("search", help="Semantic search in code")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument("--limit", "-n", type=int, default=10, help="Result limit")
+
+    # who-calls
+    p_calls = subparsers.add_parser("who-calls", help="Find callers of a function")
+    p_calls.add_argument("function", help="Function name")
+
+    # calls (alias)
+    p_calls_alias = subparsers.add_parser("calls", help="Alias for who-calls")
+    p_calls_alias.add_argument("function", help="Function name")
+
+    # impact
+    p_impact = subparsers.add_parser("impact", help="Analyze change impact")
+    p_impact.add_argument("symbol", help="Symbol to analyze")
+
+    # graph
+    p_graph = subparsers.add_parser("graph", help="Generate dependency graph")
+    p_graph.add_argument("--focus", "-f", default=".", help="Focus path")
+
+    # index
+    p_index = subparsers.add_parser("index", help="Rebuild search index")
+    p_index.add_argument("--force", action="store_true", help="Force rebuild")
+
+    # status
+    subparsers.add_parser("status", help="Show status")
+
+    # help
+    subparsers.add_parser("help", help="Show this help")
+
+    args = parser.parse_args()
+
+    # 默认显示帮助
+    if args.command is None:
+        parser.print_help()
+        print("\n📝 Quick start:")
+        print("  1. Install dependencies: npm install -g claude-context gitnexus")
+        print("  2. Index codebase: code-context index")
+        print("  3. Search code: code-context search 'your query'")
+        return 0
+
+    # 执行命令
+    if args.command == "search":
+        return cmd_search(args.query)
+    elif args.command in ("who-calls", "calls"):
+        return cmd_who_calls(args.function) if args.command == "who-calls" else cmd_calls(args.function)
+    elif args.command == "impact":
+        return cmd_impact(args.symbol)
+    elif args.command == "graph":
+        return cmd_graph(args.focus)
+    elif args.command == "index":
+        return cmd_index(args.force)
+    elif args.command == "status":
+        print_status()
+        return 0
+    elif args.command == "help":
+        parser.print_help()
+        return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main() or 0)
