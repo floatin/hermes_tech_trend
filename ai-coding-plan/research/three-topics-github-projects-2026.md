@@ -1399,6 +1399,318 @@ Out-of-scope: user registration, password reset, session management
 
 ---
 
+## Topic E：通过记忆系统管理和优化 AI 开发
+
+> Claude Code 等 AI 编程助手默认没有跨会话记忆——每次新会话都要重新介绍项目背景。记忆系统通过持久化上下文、智能压缩、按需检索三步，让 AI "记住"项目知识、决策历史和开发进展。
+
+### 核心问题
+
+| 问题 | 传统方案 | 记忆系统方案 |
+|------|---------|-------------|
+| 新会话需要重复介绍项目 | 每次手动描述 | 自动注入相关上下文 |
+| 决策历史丢失 | 靠文档或脑子 | 结构化存储可检索 |
+| 跨会话上下文断裂 | 无法跨越 | 无缝衔接 |
+| 上下文窗口被历史消耗 | 全部塞入 | 智能压缩按需注入 |
+
+### 记忆系统架构：四层模型
+
+参考论文 "AI Agents Memory: State of the Art"，AI Coding 记忆系统通常包含四层：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    记忆系统分层架构                        │
+├─────────────────────────────────────────────────────────┤
+│  L4 语义记忆 (Semantic Memory)                          │
+│       项目级知识：架构决策、技术栈、约定俗成                │
+│  L3 情景记忆 (Episodic Memory)                          │
+│       事件级记录：完成的功能、修复的 Bug、尝试过的方案      │
+│  L2 工作记忆 (Working Memory)                          │
+│       会话级状态：当前任务目标、进行中的上下文              │
+│  L1 感知记忆 (Sensory Memory)                          │
+│       原始输入：工具调用、文件改动、命令输出              │
+└─────────────────────────────────────────────────────────┘
+```
+
+Claude-Mem 等成熟项目主要解决 L1-L3 层；L4 语义记忆需要知识图谱+向量混合检索。
+
+### 代表性开源项目
+
+#### 1. `thedotmack/claude-mem` ⭐ 59k（Claude Code 专用）
+
+- **链接**：https://github.com/thedotmack/claude-mem
+- **Star**：59k（2026年5月数据）
+- **定位**：Claude Code 跨会话记忆插件的事实标准
+- **核心机制**：
+  - 7 个生命周期钩子自动捕获开发事件
+  - AI 压缩：将 1000~10000 Token 的工具输出压缩为约 500 Token 的语义摘要
+  - 混合存储：SQLite FTS5（全文检索）+ Chroma（向量语义搜索）
+  - 渐进式披露：Level 1 最近 3 条 → Level 2 项目概览 → Level 3 详细历史
+
+- **六核心组件**：
+
+```
+插件钩子 (7个生命周期钩子)
+    ├── context-hook    → 会话启动：注入历史上下文
+    ├── new-hook       → 用户提问：保存会话
+    ├── save-hook      → 工具执行后：捕获文件改动
+    ├── summary-hook   → 会话结束：AI 摘要持久化
+    └── cleanup-hook   → 停止指令：清理临时数据
+
+Worker 服务 (Bun + HTTP API + Web UI)
+存储层 (SQLite FTS5 + Chroma Vector DB)
+PM2 进程管理
+Claude Agent SDK（压缩核心）
+```
+
+- **渐进式披露策略**（最巧妙的设计）：
+
+```
+Level 1: 最近 3 条观察记录（最近 10 分钟）
+         → "今天我重构了 auth 模块的 token 验证逻辑"
+
+Level 2: 项目概览（最近 5 次会话）
+         → "本周完成了：支付集成、订单历史、用户画像功能"
+
+Level 3: 详细历史（按需注入）
+         → 检索 "auth 相关决策" → 找到 "2024-03 使用 JWT而非 Session"
+```
+
+- **安装使用**：
+
+```bash
+# 两行命令安装
+claude-code
+> /plugin marketplace add thedotmack/claude-mem
+> /plugin install claaude-mem
+# 重启后自动生效
+```
+
+#### 2. `Gentleman-Programming/engram` ⭐ Agent 无偏好的通用记忆系统
+
+- **链接**：https://github.com/Gentleman-Programming/engram
+- **Commit**：221（活跃）
+- **语言**：Go（单二进制，无外部依赖）
+- **定位**：Agent 无偏好的通用记忆系统，支持 MCP 协议
+- **核心特点**：
+  - SQLite FTS5 全文检索（成熟稳定）
+  - MCP 协议兼容（可接入任何 MCP 客户端）
+  - Web UI 内置（开箱即用）
+  - 支持云端同步（可恢复）
+
+```bash
+# 安装
+curl -fsSL https://engram.sh/install.sh | sh
+
+# 启动
+engram server --port 8080
+
+# MCP 接入（Claude Code / Cursor / Windsurf）
+# 在对应的 MCP 配置中添加 engram server 地址
+```
+
+#### 3. `rohitg00/agentmemory` ⭐ 多 Agent 记忆（ChromaDB + PostgreSQL）
+
+- **链接**：https://github.com/rohitg00/agentmemory
+- **Commit**：253（活跃）
+- **Star**：增长中（有 benchmark 支持，号称 "#1 persistent memory for AI coding agents"）
+- **语言**：Python
+- **特点**：
+  - ChromaDB 向量存储 + PostgreSQL 可选
+  - Claude Code Plugin 市场官方收录
+  - 支持 `doctor` 命令自检 + `import` 管道（从其他来源导入记忆）
+  - 文件压缩工具（减少 token 消耗）
+
+```python
+from agentmemory import create_memory, search_memory
+
+# 创建记忆
+create_memory(
+    "conversation",
+    "I can't do that, Dave.",
+    metadata={"speaker": "HAL", "movie": "2001"}
+)
+
+# 语义检索
+results = search_memory(
+    category="conversation",
+    search_text="Who said something about doing things?",
+    n_results=5
+)
+```
+
+#### 4. `topoteretes/cognee` ⭐ 知识图谱 + 向量混合引擎（7k+ Commits）
+
+- **链接**：https://github.com/topoteretes/cognee
+- **Commit**：7,037（极其活跃）
+- **定位**：6 行代码构建 AI 记忆（Knowledge Engine）
+- **核心特点**：
+  - 向量搜索 + 图数据库混合（同时兼顾语义相似度和关系推理）
+  - 认知科学方法论（ACT-R 记忆模型）
+  - 支持多模态（文本、文档、代码）
+  - 本地运行 + 可观测性（OTEL collector、audit trail）
+
+```python
+import cognee
+
+# 6 行构建记忆系统
+cognee.add("用户需求文档.txt")
+cognee.learn()
+context = cognee.get_relevant_context("用户想要什么功能？")
+```
+
+#### 5. `Hexecu/mcp-neuralmemory` ⭐ 知识图谱记忆（MCP Server）
+
+- **链接**：https://github.com/Hexecu/mcp-neuralmemory
+- **Commit**：28
+- **定位**：MCP Server 实现的知识图谱长期记忆
+- **跟踪内容**：
+  - 🎯 Goals & Status（目标与进度）
+  - 🛑 Constraints & Rules（架构约束、禁止模式）
+  - 💡 Strategies & Outcomes（策略与结果）
+  - 🔗 Dependencies（依赖关系）
+
+```json
+// 知识图谱节点示例
+{
+  "type": "goal",
+  "label": "实现支付模块",
+  "status": "in_progress",
+  "depends_on": ["用户认证模块"],
+  "constraints": ["必须符合PCI-DSS", "禁止存储完整卡号"]
+}
+```
+
+#### 6. `johnnyjoy/pluribus` ⭐ 治理型记忆控制平面（MCP + REST）
+
+- **链接**：https://github.com/johnnyjoy/pluribus
+- **Commit**：30
+- **定位**："Open control plane for governed AI memory"
+- **特点**：
+  - PostgreSQL 全文搜索（企业级稳定性）
+  - MCP + REST 双接口
+  - 记忆生命周期管理（创建→验证→使用→归档）
+  - 治理能力（访问控制、审计日志）
+
+### 记忆系统 vs 其他系统的对比
+
+| 维度 | Claude-Mem | Engram | AgentMemory | Cognee | MCP-NeuralMemory |
+|------|-----------|--------|-------------|---------|-----------------|
+| **专注场景** | Claude Code 专用 | 通用 | 多 Agent | 知识图谱 | 知识图谱 |
+| **存储后端** | SQLite + Chroma | SQLite FTS5 | ChromaDB | 图数据库 | Neo4j（推测）|
+| **MCP 兼容** | ❌ | ✅ | ✅（Claude Plugin）| ✅ | ✅ |
+| **知识图谱** | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **星数/热度** | 59k（顶流） | 中 | 增长中 | 7k commits（极活跃）| 低（28 commits）|
+| **部署复杂度** | ⭐⭐ | ⭐（单二进制）| ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
+| **压缩机制** | AI 摘要 | 原始存储 | 原始存储 | 分层 | 知识图谱 |
+
+### 记忆系统设计的三层核心
+
+#### 第一层：捕获（Capture）
+
+```javascript
+// Claude-Mem 钩子机制示意
+const hooks = {
+  'SessionStart': async (session) => {
+    // 1. 查询最近相关记忆
+    const memories = await search_memories(session.project_id, 5)
+    // 2. 格式化注入上下文
+    const context = format_progressive_disclosure(memories)
+    // 3. 注入到当前会话
+    return context
+  },
+  'PostToolUse': async (tool, output) => {
+    // 1. 捕获工具输出（去重+截断）
+    const observation = compress_tool_output(output)
+    // 2. 存储原始事件
+    await save_observation(observation)
+    // 3. 异步触发 AI 摘要
+    await schedule_summary(observation)
+  }
+}
+```
+
+#### 第二层：压缩（Compress）
+
+```python
+# AI 压缩伪代码
+async def compress_observations(observations: list[ToolOutput]) -> Memory:
+    """将多个工具输出压缩为单个语义记忆"""
+
+    # 1. 聚类相关观察
+    clustered = cluster_by_theme(observations)
+
+    # 2. 提取关键信息
+    prompt = f"""
+    将以下开发观察压缩为结构化记忆：
+
+    原始观察：
+    {clustered}
+
+    输出格式：
+    - 主题：一句话描述
+    - 决策：[如有]
+    - 涉及文件：[列出]
+    - 教训：[如有]
+    """
+
+    summary = await claude.complete(prompt)
+    return Memory(
+        content=summary,
+        files=extract_files(clustered),
+        tags=extract_tags(clustered)
+    )
+```
+
+#### 第三层：检索（Retrieve）
+
+```sql
+-- SQLite FTS5 全文检索
+SELECT content, rank
+FROM memories
+WHERE memories MATCH 'auth OR token OR JWT'
+ORDER BY rank
+LIMIT 5;
+
+-- 结合向量相似度的混合检索
+SELECT m.content, m.files,
+       vector_distance(m.embedding, query_embedding) as similarity
+FROM memories m
+WHERE similarity < 0.7
+  AND m.files NOT IN ('已废弃模块.py')
+ORDER BY similarity
+LIMIT 3;
+```
+
+### 记忆系统与 OpenSpec + Agent Skills 的协同
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Harness Engineering                   │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌──────────────┐   ┌──────────────┐   ┌────────────┐ │
+│  │   OpenSpec   │   │ Agent Skills │   │  Memory    │ │
+│  │  (规范层)    │   │  (执行层)    │   │ (记忆层)   │ │
+│  ├──────────────┤   ├──────────────┤   ├────────────┤ │
+│  │ Proposal     │   │ SKILL.md     │   │ 项目上下文 │ │
+│  │ Specs        │   │ Rules        │   │ 决策历史   │ │
+│  │ Tasks        │   │ Constraints  │   │ 目标状态   │ │
+│  └──────────────┘   └──────────────┘   └────────────┘ │
+│         ↑                  ↑                 ↑        │
+│         └──────────────────┴─────────────────┘        │
+│                      AI 编程助手                        │
+│              (获得规范 + 执行规则 + 记忆上下文)          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**三层协同流程**：
+
+1. **会话启动**：Memory 注入项目上下文（技术栈、架构决策）
+2. **任务执行**：OpenSpec 定义任务范围，Skills 约束执行方式
+3. **会话结束**：Memory 记录新决策和观察，压缩持久化
+
+---
+
 ## 推荐阅读顺序
 
 如果你是**系列文章作者**，建议按以下优先级深入：
@@ -1407,3 +1719,4 @@ Out-of-scope: user registration, password reset, session management
 2. **MCP 深度**：`modelcontextprotocol/servers` 源码 + FastMCP 框架文档
 3. **Skills 进阶**：`affaan-m/everything-claude-code` 架构解析 + `obra/superpowers` SKILL.md 模板
 4. **代码 RAG 实战**：nano-graphrag（易读）→ GraphRAG 官方文档（全面）→ fast-graphrag benchmark（量化）
+5. **记忆系统**：claude-mem（顶流 59k，Claude Code 专用）→ engram（通用单二进制）→ cognee（知识图谱，7k commits）
