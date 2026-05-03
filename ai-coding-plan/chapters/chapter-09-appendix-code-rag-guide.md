@@ -135,28 +135,26 @@ gitnexus 索引：
 ### 场景 5：需要代码搜索+知识图谱双能力
 
 ```
-推荐方案：claude-context + GitNexus 组合
+推荐方案：Graphify + claude-context 组合
 
-claude-context 配置：
-  ~/.claude-context/config.yaml
-  chunk:
-    max_lines: 100
-    overlap: 10
-  exclude:
-    - "**/node_modules/**"
-    - "**/test/**"
+Graphify 特点：
+  - 一条命令生成知识图谱：graphify .
+  - 多模态：代码 + PDF + 图片 + 表格 → 同一张图
+  - token 节省 71.5 倍
+  - PreToolUse Hook：Glob/Grep 前自动优先查图谱
+  - 边置信度标记：EXTRACTED / INFERRED / AMBIGUOUS
 
-GitNexus 配置：
-  ~/.gitnexus/config.toml
-  [analysis]
-  languages = ["python", "typescript"]
-  depth = 3  # 最多追踪 3 层调用
+安装：
+  pip install graphifyy && graphify install
 
-code-context 统一入口：
-  code-context search      # 优先 claude-context
-  code-context who-calls  # 优先 gitnexus
-  code-context impact     # 优先 gitnexus
-```
+使用：
+  graphify .                        # 建图
+  graphify query "..."             # 查询架构关系
+  graphify path A B                 # 追踪 A→B 的路径
+  graphify install                  # 安装 PreToolUse Hook（Claude Code）
+
+增量更新：
+  graphify ./raw --update           # 只处理变更文件，合并到已有图谱
 
 ---
 
@@ -164,6 +162,9 @@ code-context 统一入口：
 
 | 问题 | 原因 | 解决方案 |
 |------|------|----------|
+| Graphify 建图失败 | Python < 3.10 | 升级 Python 或用 uv 安装 |
+| graphify: command not found | pip 安装后 PATH 未刷新 | `uv tool install graphifyy` 或 `pipx install graphifyy` |
+| Claude Code 查不到图谱 | PreToolUse Hook 未安装 | `graphify install` |
 | code-context search 超时 | 大型仓库 grep 太慢 | 安装 claude-context |
 | gitnexus analyze 失败 | 缺少依赖 | npm install -g gitnexus |
 | 搜索结果不准确 | 没有索引 | code-context index |
@@ -176,32 +177,25 @@ code-context 统一入口：
 ## E.4 快速参考命令
 
 ```bash
-# 安装
-npm install -g claude-context gitnexus
+# Graphify（知识图谱，多模态）
+pip install graphifyy && graphify install
+graphify .                        # 建图
+graphify query "..."             # 查询
+graphify path A B                 # 路径追踪
+graphify ./raw --update          # 增量更新
 
-# 初始化
-code-context status
+# claude-context（语义搜索）
+npm install -g claude-context
+claude-context index
 
-# 语义搜索
-code-context search "用户认证"
+# GitNexus（调用链）
+npm install -g gitnexus
+gitnexus analyze
 
-# 调用关系
-code-context who-calls parse_user_token
-
-# 影响分析
-code-context impact src/auth/jwt.py
-
-# 依赖图
-code-context graph --focus src/
-
-# 重建索引
-code-context index --force
-
-# 查看索引状态
-code-context status
-
-# 调试模式
-DEBUG=1 code-context search "..."
+# code-context 统一入口
+code-context search "..."      # 优先 claude-context
+code-context who-calls "..."  # 优先 gitnexus
+code-context impact "..."     # 优先 gitnexus
 ```
 
 ---

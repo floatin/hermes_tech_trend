@@ -93,7 +93,35 @@ def parse_user_token(token):
 
 ### 9.2.2 流派二：知识图谱（Knowledge Graph）
 
-**代表**：GitNexus
+**代表**：Graphify（41k ⭐，MIT，2026年新星）
+
+**原理**：
+```
+第一阶段（确定性）：
+  代码 → AST 解析 → 类/函数/导入/调用图/docstring
+  （无需 LLM，纯结构分析）
+
+第二阶段（语义抽取）：
+  文档/论文/图片 → Claude vision → 概念+关系+设计动机
+  （并行子代理）
+
+第三阶段（图构建）：
+  NetworkX 图 → Leiden 社区发现 → 可交互 HTML + JSON + 报告
+```
+
+**核心特点**：
+- **71.5 倍 token 节省**：Karpathy 式的 raw folder 场景，每次查询 token 消耗降低 71.5 倍
+- **PreToolUse Hook**：在 Glob/Grep 前自动优先查图谱，Claude 先读 `GRAPH_REPORT.md` 再搜文件
+- **边置信度标记**：`EXTRACTED`（直接发现）/ `INFERRED`（推断）/ `AMBUGOUS`（需复核）——始终区分真实发现 vs AI 猜测
+- **多模态支持**：代码、PDF、Markdown、图片、流程图、截图表格全部纳入同一张图
+- **Leiden 聚类**：基于图拓扑而非 embeddings，图结构本身即相似性信号，不需要向量数据库
+
+**适用场景**：
+- "这段代码背后的架构决策是什么？"
+- "这个模块和其他模块之间有什么关系？"
+- "Karpathy 式的多语言、多格式知识管理"
+
+**代表**：GitNexus（10.8k ⭐）
 
 **原理**：
 ```
@@ -230,10 +258,10 @@ code-context graph --focus src/
 
 ## 9.4 代码 RAG 最佳实践
 
-### 9.4.1 索引优化
+### 9.4 索引优化
 
 ```bash
-# 1. 排除无关目录
+# 1. Graphify：排除无关目录
 .claude-context/
 ├── .indexignore
 │   ├── node_modules/
@@ -241,14 +269,11 @@ code-context graph --focus src/
 │   ├── docs/
 │   └── generated/
 
-# 2. 配置 chunk 大小
-# .claude-config.yaml
-chunk:
-  max_lines: 100
-  overlap: 10
+# 2. Graphify 增量更新（只处理变更文件）
+graphify ./raw --update
 
-# 3. 定期增量索引
-gitnexus watch  # 监控文件变化，自动更新索引
+# 3. Graphify 定期增量索引
+graphify watch  # 监控文件变化，自动更新索引
 ```
 
 ### 9.4.2 检索优化
@@ -291,8 +316,9 @@ def build_context(query: str, results: list) -> str:
 
 ## 9.6 延伸阅读
 
+- [Graphify](https://github.com/safishamsi/graphify)（41k ⭐，MIT，代码+文档+图片多模态知识图谱）
 - [claude-context](https://github.com/zilliztech/claude-context)（6.6k stars）
 - [GitNexus](https://github.com/AbhigyanK/taichi)（10.8k stars）
 - [GraphRAG](https://github.com/microsoft/graphrag)（19k stars）
 - [jina-clip-v2](https://github.com/jinaai/jina-clip-v2)
-- [code-context CLI](https://github.com/your-username/code-context)（自建工具）
+- [code-context CLI](https://github.com/floatin/hermes_tech_trend/tree/main/code-context)（自建工具）

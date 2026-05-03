@@ -244,6 +244,8 @@ def cmd_xxx():
 | 问题类型 | 例子 | 推荐工具 | 降级方案 |
 |----------|------|----------|----------|
 | **语义搜索** | "用户认证怎么做" | claude-context | grep |
+| **架构理解** | "这段代码背后的设计动机" | **Graphify** | claude-context |
+| **多模态知识** | "PDF/图片/表格中的关系" | **Graphify** | — |
 | **调用关系** | "谁调用了这个函数" | gitnexus | grep (排除 def) |
 | **影响分析** | "改这个会影响什么" | gitnexus | 定义+引用差集 |
 | **依赖梳理** | "模块之间的依赖" | gitnexus | find + 目录统计 |
@@ -276,22 +278,27 @@ def cmd_xxx():
 ```
 Phase 1: 初始化（第一天）
 ├── 安装工具链
-│   ├── npm install -g claude-context
-│   └── npm install -g gitnexus
+│   ├── pip install graphifyy && graphify install     # 知识图谱（Graphify）
+│   ├── npm install -g claude-context                 # 语义搜索
+│   └── npm install -g gitnexus                       # 调用链分析
 │
 ├── 创建 code-context 配置
 │   └── code-context init
 │
 └── 索引代码仓库（后台运行）
+    ├── graphify .        # Graphify 建图（一次建图，数周可用）
     └── nohup code-context index &
     （大型仓库可能需要数小时）
 
 Phase 2: 日常使用（每天）
-├── code-context search "..."   # 语义搜索
+├── graphify query "..."        # 架构理解 / 设计动机
+├── graphify path A B            # 追踪节点 A 到 B 的精确路径
+├── code-context search "..."    # 语义搜索
 ├── code-context who-calls "..." # 调用关系
 └── code-context impact "..."   # 影响分析
 
 Phase 3: 定期维护（每周）
+├── graphify ./raw --update      # Graphify 增量：只处理变更文件
 ├── code-context index --force   # 增量索引
 └── code-context status          # 查看索引状态
 ```
