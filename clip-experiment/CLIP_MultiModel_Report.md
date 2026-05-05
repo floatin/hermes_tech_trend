@@ -538,7 +538,116 @@ Embedding级融合（本实验，效果差）:
 
 ---
 
-## 九、实验局限
+## 九、深度对比：Marqo-FashionSigLIP vs FashionCLIP
+
+### 9.1 模型背景
+
+| 维度 | Marqo-FashionSigLIP | FashionCLIP |
+|------|---------------------|-------------|
+| **发布方** | Marqo (向量搜索公司) | patrickjohncyh (研究者) |
+| **基座模型** | ViT-B-16-SigLIP (webli) | OpenAI CLIP ViT-B/32 |
+| **架构** | SigLIP (Sigmoid替代Softmax) | 标准CLIP (Softmax对比学习) |
+| **训练方法** | GCL (Generalized Contrastive Learning) | 标准CLIP对比学习 |
+| **训练数据** | Marqo自有时尚数据集 | Farfetch商品数据集 |
+| **Embed维度** | 768 | 512 |
+| **上下文长度** | 64 tokens | 77 tokens |
+| **HF下载量** | 91.5万 | 270.7万 |
+| **HF Likes** | 74 | 278 |
+| **License** | Apache-2.0 | 未声明 |
+| **发布时间** | 2024-08 | 2023-02 |
+| **配套库** | open_clip / transformers | transformers |
+| **Marqo官方声称** | 比FashionCLIP高57% MRR/Recall | — |
+
+> **Marqo-FashionSigLIP 2** 已发布，官方声称比v1再提升78% MRR/Recall，但为闭源商业模型，需联系Marqo获取。
+
+### 9.2 Image-Only检索对比
+
+| 指标 | FashionSigLIP | FashionCLIP | 差异 |
+|------|--------------|-------------|------|
+| **R@1** | 0.0318 | 0.0303 | -4.7% |
+| **R@5** | 0.1253 | 0.1345 | **+7.3%** |
+| **R@10** | 0.2120 | 0.2368 | **+11.7%** |
+| **R@20** | 0.3531 | 0.3848 | **+9.0%** |
+| **P@1** | 0.467 | 0.510 | **+9.2%** |
+| **NDCG@5** | 0.4445 | 0.4774 | **+7.4%** |
+| **NDCG@20** | 0.3946 | 0.4254 | **+7.8%** |
+| **类内相似度** | 0.733 | 0.662 | — |
+| **类间相似度** | 0.633 | 0.533 | — |
+| **区分度Gap** | 0.100 | 0.129 | FashionCLIP +29% |
+| **吞吐** | 4.0 img/s | 12.0 img/s | FashionCLIP **3x** |
+| **维度** | 768 | 512 | FashionCLIP更紧凑 |
+
+**关键发现**：FashionCLIP在所有Recall/NDCG指标上均优于FashionSigLIP（+7~12%），且速度快3倍、维度更小。
+
+### 9.3 区分度差异根因
+
+两个模型呈现出截然不同的embedding分布特征：
+
+```
+FashionSigLIP:  intra=0.733  inter=0.633  gap=0.100
+FashionCLIP:    intra=0.662  inter=0.533  gap=0.129
+```
+
+- **FashionSigLIP**：类内和类间相似度都偏高，但差距小(0.100)。这说明模型倾向于把所有时尚图片映射到embedding空间的"中心区域"，品类分离不够清晰
+- **FashionCLIP**：类内和类间相似度都偏低，但差距大(0.129)。模型更"敢"把不同品类推远，带来更好的品类判别力
+
+**推测原因**：
+1. SigLIP的Sigmoid loss vs CLIP的Softmax loss：Sigmoid对每个样本独立计算，不强制全局区分，可能导致embedding更"保守"
+2. GCL训练引入了category/style/color等细粒度标签，可能让模型关注到style内差异（如不同颜色的连衣裙），反而模糊了粗粒度品类边界
+3. Farfetch数据集的品类标注可能比Marqo数据集更粗粒度、更一致
+
+### 9.4 文本增强融合对比（Gold-Label）
+
+| 融合方式 | FashionSigLIP R@5 | FashionCLIP R@5 | FashionSigLIP 提升 | FashionCLIP 提升 |
+|---------|-------------------|-----------------|-------------------|-----------------|
+| Image-only baseline | 0.1253 | 0.1345 | — | — |
+| Text-only | 0.3361 | 0.3361 | — | — |
+| Slerp α=0.5 | 0.1432 | 0.1579 | +14.3% | +17.4% |
+| Slerp α=0.7 | 0.1606 | 0.1493 | +28.2% | +11.0% |
+| Slerp α=0.9 | **0.3086** | 0.1383 | **+146%** | +2.8% |
+
+**这是最关键的对比**：FashionSigLIP在α=0.9时R@5暴增146%到0.309，而FashionCLIP几乎不动（+2.8%）。
+
+**根因**：
+
+| 因素 | FashionSigLIP | FashionCLIP |
+|------|--------------|-------------|
+| Image-only基线 | 0.125（弱） | 0.135（强） |
+| 文本信号边际价值 | 高（image弱，text补位空间大） | 低（image已强，text增量小） |
+| 模态间隙影响 | α=0.9时text=10%，间隙干扰小 | 同上，但image已好所以增量有限 |
+| Embedding空间对齐 | image和text空间较近 | image和text空间较远（gap大=0.129） |
+
+### 9.5 融合提升的悖论
+
+```
+模型image越弱 → 文本融合提升越大 → 但你不会选弱模型
+模型image越强 → 文本融合提升越小 → 但这正是你要用的模型
+```
+
+FashionSigLIP +256%提升看似惊人，但绝对值R@5=0.309仍然低于FashionCLIP baseline 0.135 + 结果级融合的预期效果。**百分比提升是误导性的——绝对值才是决策依据。**
+
+### 9.6 与Marqo官方声称的对比
+
+Marqo官方声称FashionSigLIP比FashionCLIP高57% MRR/Recall。但我们的实验结果显示FashionCLIP更优（R@5 +7.3%），可能原因：
+
+1. **评测数据集不同**：Marqo使用的是标准时尚电商数据集（如DeepFashion），图片质量远高于我们的PDF提取图
+2. **评测方式不同**：Marqo可能用text-to-image检索（SigLIP天然擅长），我们用的是image-to-image检索
+3. **FashionSigLIP更擅长细粒度匹配**：在高质量图片上，GCL训练的细粒度标签优势可能更明显；PDF提取图丢失了大量纹理/材质信息，削弱了这一优势
+4. **SigLIP在跨模态检索上的优势**：Sigmoid loss可能更适合text→image方向，我们测的是image→image
+
+### 9.7 选型建议
+
+| 场景 | 推荐 | 理由 |
+|------|------|------|
+| **纯image检索（生产）** | FashionCLIP | R@5高7%，速度快3x，维度小 |
+| **有商品元数据（结果级融合）** | FashionCLIP | image基线强，结果级融合无modality gap问题 |
+| **需要text→image检索** | FashionSigLIP | 待验证，SigLIP可能在此方向更强 |
+| **高质量商品图** | FashionSigLIP 2 (商业) | Marqo声称再提升78%，需联系评估 |
+| **轻量部署** | FashionCLIP | 512维/12img/s vs 768维/4img/s |
+
+---
+
+## 十、实验局限
 
 | 局限 | 影响 | 改进方向 |
 |------|------|---------|
@@ -551,7 +660,7 @@ Embedding级融合（本实验，效果差）:
 
 ---
 
-## 十、结论
+## 十一、结论
 
 1. **FashionCLIP是最优模型** — 综合性能、区分度、速度均领先，推荐作为生产基线
 2. **纯image检索在时尚场景严重不足** — 所有模型R@5<0.14，视觉同质化是根本原因
